@@ -1,7 +1,9 @@
-"use client";
+'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Header from './components/Header';
+import Footer from './components/Footer';
 
 // Types
 type Product = {
@@ -16,31 +18,6 @@ type Product = {
   productId: string;
 };
 
-// Header Component
-const Header = () => (
-  <header style={{ padding: '1rem', background: '#e8f5e9', color: '#388e3c', display: 'flex', alignItems: 'center' }}>
-    <span style={{ fontSize: '2.5rem', marginRight: '0.75rem' }} aria-label="Farm Icon" role="img">
-      🌱
-    </span>
-    <h1 style={{
-      fontFamily: 'Arial, Georgia, serif',
-      letterSpacing: '2px',
-      fontWeight: 'bold',
-      fontSize: '2rem',
-      margin: 0
-    }}>
-      Farmers Direct
-    </h1>
-  </header>
-);
-
-// Footer Component
-const Footer = () => (
-  <footer style={{ padding: '1rem', background: '#e8f5e9', color: '#388e3c', marginTop: '2rem' }}>
-    <p>&copy; 2025 Farmers Direct</p>
-  </footer>
-);
-
 // Search Component
 const Search = ({ onSearch }: { onSearch: (query: string) => void }) => {
   const [query, setQuery] = useState('');
@@ -51,8 +28,8 @@ const Search = ({ onSearch }: { onSearch: (query: string) => void }) => {
   return (
     <section style={{ marginBottom: '1rem' }}>
       <input
-        type="text"
-        placeholder="Search products..."
+        type='text'
+        placeholder='Search products...'
         value={query}
         onChange={handleChange}
         style={{
@@ -62,7 +39,7 @@ const Search = ({ onSearch }: { onSearch: (query: string) => void }) => {
           borderRadius: '8px',
           background: '#f1f8e9',
           color: '#388e3c',
-          fontSize: '1rem'
+          fontSize: '1rem',
         }}
       />
     </section>
@@ -79,7 +56,7 @@ const SearchResults = ({ results }: { results: Product[] }) => {
         <p style={{ color: '#d84315' }}>No products found.</p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0 }}>
-          {results.map(product => (
+          {results.map((product) => (
             <li
               key={product.productId}
               style={{
@@ -88,25 +65,37 @@ const SearchResults = ({ results }: { results: Product[] }) => {
                 borderRadius: '8px',
                 marginBottom: '1rem',
                 padding: '1rem',
-                color: '#6d4c41'
+                color: '#6d4c41',
               }}
             >
               <strong
-                style={{ color: '#388e3c', cursor: 'pointer', textDecoration: 'underline' }}
+                style={{
+                  color: '#388e3c',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
                 onClick={() => router.push(`/product/${product.productId}`)}
                 tabIndex={0}
-                role="button"
+                role='button'
                 aria-label={`View details for ${product.title}`}
-                onKeyDown={e => {
+                onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     router.push(`/product/${product.productId}`);
                   }
                 }}
               >
                 {product.title}
-              </strong>
-              {' '}<span style={{ color: '#000' }}>- {product.type}</span>
-              {' '}<span style={product.category === "organic" ? { color: '#ff7043' } : { color: '#000' }}>({product.category})</span>
+              </strong>{' '}
+              <span style={{ color: '#000' }}>- {product.type}</span>{' '}
+              <span
+                style={
+                  product.category === 'organic'
+                    ? { color: '#ff7043' }
+                    : { color: '#000' }
+                }
+              >
+                ({product.category})
+              </span>
               <br />
               <span style={{ color: '#388e3c', fontWeight: 'bold' }}>
                 Price: {product.price.toString()}
@@ -120,7 +109,10 @@ const SearchResults = ({ results }: { results: Product[] }) => {
 };
 
 // Debounce function
-function useDebouncedCallback(callback: (query: string) => void, delay: number) {
+function useDebouncedCallback(
+  callback: (query: string) => void,
+  delay: number
+) {
   const timer = useRef<NodeJS.Timeout | null>(null);
 
   return useCallback(
