@@ -18,15 +18,40 @@ interface User {
   createdAt: string;
 }
 
+interface VerificationDocument {
+  documentType: string;
+  fileName: string;
+  fileUrl: string; // Vercel Blob URL
+  fileSize?: number;
+  fileType?: string;
+  verified: boolean;
+  verifiedBy: string | null;
+  submittedAt: string;
+  verifiedAt: string | null;
+  status?: string;
+}
+
+interface VerificationDoc {
+  _id: string;
+  userId: string;
+  farmerId?: string;
+  kisanId?: string;
+  documents: VerificationDocument[];
+  submittedAt: string;
+  updatedAt: string;
+}
+
 export default function AdminPage() {
   const router = useRouter();
-  const [activeMainTab, setActiveMainTab] = useState<'users' | 'products'>(
+  const [activeMainTab, setActiveMainTab] = useState<'users' | 'pending' | 'products'>(
     'users'
   );
   const [activeUserTab, setActiveUserTab] = useState<
     'farmers' | 'buyers' | 'admins' | 'owner'
   >('farmers');
   const [users, setUsers] = useState<User[]>([]);
+  const [verificationDocs, setVerificationDocs] = useState<VerificationDoc[]>([]);
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ userType: string } | null>(
@@ -54,6 +79,62 @@ export default function AdminPage() {
       ...prev,
       isOpen: false,
     }));
+  };
+
+  // Handle document verification actions
+  const handleDocumentAction = async (userId: string, documentType: string, action: 'accept' | 'reject') => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const userData = localStorage.getItem('userData');
+      const user = userData ? JSON.parse(userData) : null;
+
+      const response = await fetch('/api/verification-docs', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId,
+          documentType,
+          action,
+          adminEmail: user?.email || 'admin'
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        showSnackbar(`Document ${action}ed successfully!`, 'success');
+        
+        // Refresh data
+        const usersResponse = await fetch('/api/user', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (usersResponse.ok) {
+          const usersData = await usersResponse.json();
+          setUsers(usersData.data || []);
+        }
+
+        const docsResponse = await fetch('/api/verification-docs', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (docsResponse.ok) {
+          const docsData = await docsResponse.json();
+          setVerificationDocs(docsData.data || []);
+        }
+      } else {
+        showSnackbar(result.message || 'Failed to update document', 'error');
+      }
+    } catch (error) {
+      console.error('Error updating document:', error);
+      showSnackbar('Error updating document', 'error');
+    }
+  };
+
+  // Get verification docs for a user
+  const getUserDocs = (userId: string) => {
+    return verificationDocs.find(doc => doc.userId === userId);
   };
 
   useEffect(() => {
@@ -106,6 +187,18 @@ export default function AdminPage() {
         } else {
           showSnackbar('Failed to fetch users', 'error');
         }
+
+        // Fetch verification documents
+        const docsResponse = await fetch('/api/verification-docs', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (docsResponse.ok) {
+          const docsData = await docsResponse.json();
+          setVerificationDocs(docsData.data || []);
+        }
       } catch (error) {
         console.error('Error fetching users:', error);
         showSnackbar('Error loading users', 'error');
@@ -122,6 +215,13 @@ export default function AdminPage() {
   const buyers = users.filter((u) => u.userType === 'buyer');
   const admins = users.filter((u) => u.userType === 'admin');
   const owners = users.filter((u) => u.userType === 'owner');
+
+  // Filter pending users (farmers and buyers only)
+  const pendingUsers = users.filter(
+    (u) =>
+      (u.userType === 'farmer' || u.userType === 'buyer') &&
+      (!u.emailVerified || !u.userVerified || (u.userType === 'farmer' && u.documentStatus !== 'verified'))
+  );
 
   const getUsersByTab = () => {
     switch (activeUserTab) {
@@ -412,6 +512,14 @@ export default function AdminPage() {
             </button>
             <button
               className={`main-tab ${
+                activeMainTab === 'pending' ? 'active' : ''
+              }`}
+              onClick={() => setActiveMainTab('pending')}
+            >
+              ⏳ Pending Access ({pendingUsers.length})
+            </button>
+            <button
+              className={`main-tab ${
                 activeMainTab === 'products' ? 'active' : ''
               }`}
               onClick={() => setActiveMainTab('products')}
@@ -610,6 +718,329 @@ export default function AdminPage() {
                           </td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Pending Access Tab */}
+          {activeMainTab === 'pending' && (
+            <div>
+              <div
+                style={{
+                  background: '#fff3e0',
+                  border: '2px solid #ff9800',
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  marginBottom: '1.5rem',
+                }}
+              >
+                <strong style={{ color: '#e65100' }}>ℹ️ Pending Access:</strong>{' '}
+                <span style={{ color: '#6d4c41' }}>
+                  Users with pending email verification, user verification, or document verification
+                </span>
+              </div>
+
+              {loading ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: '4rem',
+                    background: 'white',
+                    borderRadius: '12px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      border: '4px solid #c8e6c9',
+                      borderTop: '4px solid #388e3c',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite',
+                      marginRight: '1rem',
+                    }}
+                  ></div>
+                  <span style={{ color: '#388e3c', fontWeight: 'bold' }}>
+                    Loading pending users...
+                  </span>
+                </div>
+              ) : pendingUsers.length === 0 ? (
+                <div
+                  style={{
+                    background: 'white',
+                    borderRadius: '12px',
+                    padding: '3rem',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✅</div>
+                  <h3 style={{ color: '#388e3c', margin: 0 }}>
+                    No pending verifications
+                  </h3>
+                  <p style={{ color: '#6d4c41', marginTop: '0.5rem' }}>
+                    All users are fully verified!
+                  </p>
+                </div>
+              ) : (
+                <div className='users-table'>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>User Type</th>
+                        <th>Farmer ID</th>
+                        <th>Email</th>
+                        <th>Email Verified</th>
+                        <th>User Verified</th>
+                        <th>Documents</th>
+                        <th>Joined Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingUsers.map((user) => {
+                        const userDocs = getUserDocs(user._id);
+                        const isExpanded = expandedUser === user._id;
+                        
+                        return (
+                          <React.Fragment key={user._id}>
+                            <tr>
+                              <td data-label='Name' style={{ fontWeight: 'bold', color: '#388e3c' }}>
+                                {user.fullName}
+                                {userDocs && userDocs.documents.length > 0 && (
+                                  <button
+                                    onClick={() => setExpandedUser(isExpanded ? null : user._id)}
+                                    style={{
+                                      marginLeft: '0.5rem',
+                                      background: '#388e3c',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      padding: '0.25rem 0.5rem',
+                                      cursor: 'pointer',
+                                      fontSize: '0.8rem'
+                                    }}
+                                  >
+                                    {isExpanded ? '▼ Hide Docs' : '▶ Show Docs'}
+                                  </button>
+                                )}
+                              </td>
+                              <td data-label='User Type'>
+                                <span
+                                  style={{
+                                    background: user.userType === 'farmer' ? '#e8f5e9' : '#e3f2fd',
+                                    color: user.userType === 'farmer' ? '#2e7d32' : '#1565c0',
+                                    padding: '0.25rem 0.5rem',
+                                    borderRadius: '4px',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 'bold',
+                                  }}
+                                >
+                                  {user.userType === 'farmer' ? '🌾 Farmer' : '🛒 Buyer'}
+                                </span>
+                              </td>
+                              <td data-label='Farmer ID'>
+                                {user.farmerId ? (
+                                  <code
+                                    style={{
+                                      background: '#e3f2fd',
+                                      padding: '0.25rem 0.5rem',
+                                      borderRadius: '4px',
+                                      fontSize: '0.9rem',
+                                    }}
+                                  >
+                                    {user.farmerId}
+                                  </code>
+                                ) : (
+                                  <span style={{ color: '#999' }}>-</span>
+                                )}
+                              </td>
+                              <td data-label='Email'>{decryptEmail(user.email)}</td>
+                              <td data-label='Email Verified'>
+                                <span
+                                  className={`status-badge ${
+                                    user.emailVerified
+                                      ? 'status-verified'
+                                      : 'status-unverified'
+                                  }`}
+                                >
+                                  {user.emailVerified ? '✓ Verified' : '✗ Unverified'}
+                                </span>
+                              </td>
+                              <td data-label='User Verified'>
+                                <span
+                                  className={`status-badge ${
+                                    user.userVerified
+                                      ? 'status-verified'
+                                      : 'status-unverified'
+                                  }`}
+                                >
+                                  {user.userVerified ? '✓ Verified' : '✗ Unverified'}
+                                </span>
+                              </td>
+                              <td data-label='Documents'>
+                                <span
+                                  className={`status-badge ${
+                                    user.documentStatus === 'verified'
+                                      ? 'status-verified'
+                                      : user.documentStatus === 'pending'
+                                      ? 'status-pending'
+                                      : 'status-unverified'
+                                  }`}
+                                >
+                                  {user.documentStatus === 'verified'
+                                    ? '✓ Verified'
+                                    : user.documentStatus === 'pending'
+                                    ? '⏳ Pending'
+                                    : '✗ Not Submitted'}
+                                </span>
+                              </td>
+                              <td data-label='Joined Date' style={{ color: '#6d4c41' }}>
+                                {formatDate(user.createdAt)}
+                              </td>
+                            </tr>
+                            
+                            {/* Expanded Documents Row */}
+                            {isExpanded && userDocs && (
+                              <tr>
+                                <td colSpan={8} style={{ padding: 0, background: '#f5f5f5' }}>
+                                  <div style={{ padding: '1rem' }}>
+                                    <h4 style={{ color: '#388e3c', marginTop: 0 }}>📄 Submitted Documents</h4>
+                                    {userDocs.documents.length === 0 ? (
+                                      <p style={{ color: '#757575' }}>No documents submitted yet</p>
+                                    ) : (
+                                      <div style={{ display: 'grid', gap: '1rem' }}>
+                                        {userDocs.documents.map((doc, index) => (
+                                          <div
+                                            key={index}
+                                            style={{
+                                              background: 'white',
+                                              border: `2px solid ${
+                                                doc.verified
+                                                  ? '#4caf50'
+                                                  : doc.status === 'rejected'
+                                                  ? '#f44336'
+                                                  : '#ff9800'
+                                              }`,
+                                              borderRadius: '8px',
+                                              padding: '1rem',
+                                              display: 'flex',
+                                              justifyContent: 'space-between',
+                                              alignItems: 'center',
+                                              flexWrap: 'wrap',
+                                              gap: '1rem'
+                                            }}
+                                          >
+                                            <div style={{ flex: 1 }}>
+                                              <div style={{ fontWeight: 'bold', color: '#388e3c', marginBottom: '0.5rem' }}>
+                                                {doc.documentType}
+                                              </div>
+                                              <div style={{ fontSize: '0.9rem', color: '#666' }}>
+                                                📎 {doc.fileName}
+                                              </div>
+                                              {doc.fileSize && (
+                                                <div style={{ fontSize: '0.85rem', color: '#999', marginTop: '0.25rem' }}>
+                                                  Size: {(doc.fileSize / 1024).toFixed(2)} KB
+                                                </div>
+                                              )}
+                                              <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
+                                                Submitted: {new Date(doc.submittedAt).toLocaleDateString()}
+                                              </div>
+                                              {doc.verifiedBy && (
+                                                <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
+                                                  Verified by: {doc.verifiedBy}
+                                                </div>
+                                              )}
+                                            </div>
+                                            
+                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                              <span
+                                                className={`status-badge ${
+                                                  doc.verified
+                                                    ? 'status-verified'
+                                                    : doc.status === 'rejected'
+                                                    ? 'status-unverified'
+                                                    : 'status-pending'
+                                                }`}
+                                                style={{ marginRight: '0.5rem' }}
+                                              >
+                                                {doc.verified
+                                                  ? '✓ Verified'
+                                                  : doc.status === 'rejected'
+                                                  ? '✗ Rejected'
+                                                  : '⏳ Pending'}
+                                              </span>
+                                              
+                                              <a
+                                                href={doc.fileUrl}
+                                                download={doc.fileName}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{
+                                                  background: '#2196f3',
+                                                  color: 'white',
+                                                  border: 'none',
+                                                  borderRadius: '4px',
+                                                  padding: '0.5rem 1rem',
+                                                  cursor: 'pointer',
+                                                  textDecoration: 'none',
+                                                  fontSize: '0.85rem',
+                                                  display: 'inline-block'
+                                                }}
+                                              >
+                                                ⬇️ Download
+                                              </a>
+                                              
+                                              {!doc.verified && doc.status !== 'rejected' && (
+                                                <>
+                                                  <button
+                                                    onClick={() => handleDocumentAction(user._id, doc.documentType, 'accept')}
+                                                    style={{
+                                                      background: '#4caf50',
+                                                      color: 'white',
+                                                      border: 'none',
+                                                      borderRadius: '4px',
+                                                      padding: '0.5rem 1rem',
+                                                      cursor: 'pointer',
+                                                      fontSize: '0.85rem',
+                                                      fontWeight: 'bold'
+                                                    }}
+                                                  >
+                                                    ✓ Accept
+                                                  </button>
+                                                  <button
+                                                    onClick={() => handleDocumentAction(user._id, doc.documentType, 'reject')}
+                                                    style={{
+                                                      background: '#f44336',
+                                                      color: 'white',
+                                                      border: 'none',
+                                                      borderRadius: '4px',
+                                                      padding: '0.5rem 1rem',
+                                                      cursor: 'pointer',
+                                                      fontSize: '0.85rem',
+                                                      fontWeight: 'bold'
+                                                    }}
+                                                  >
+                                                    ✗ Reject
+                                                  </button>
+                                                </>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

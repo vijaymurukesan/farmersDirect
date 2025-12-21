@@ -335,93 +335,138 @@ export default function VerificationPage() {
     setUploadingDocs(true);
 
     try {
-      // For now, we'll store document info without actual file upload
-      // In production, you'd use a file upload service like AWS S3, Cloudinary, etc.
       const token = localStorage.getItem('authToken');
 
-      const documents = [
-        {
-          documentType: 'aadhaar',
-          fileName: aadhaarFile.name,
-          fileSize: aadhaarFile.size,
-          fileType: aadhaarFile.type,
-        },
-      ];
+      // Helper function to upload a file to Vercel Blob
+      const uploadFile = async (file: File, documentType: string) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('documentType', documentType);
+        formData.append('farmerId', userData.farmerId || '');
 
-      // Add land documents for farmers
+        const uploadResponse = await fetch('/api/upload-document', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+
+        if (!uploadResponse.ok) {
+          const error = await uploadResponse.json();
+          throw new Error(error.message || 'Failed to upload file');
+        }
+
+        return await uploadResponse.json();
+      };
+
+      // Upload all mandatory and optional documents
+      showSnackbar('Uploading documents to cloud storage...', 'info');
+      
+      const documents = [];
+
+      // Upload Aadhaar (mandatory)
+      const aadhaarUpload = await uploadFile(aadhaarFile, 'aadhaar');
+      documents.push({
+        documentType: 'aadhaar',
+        fileName: aadhaarUpload.data.fileName,
+        fileUrl: aadhaarUpload.data.url,
+        fileSize: aadhaarUpload.data.fileSize,
+        fileType: aadhaarUpload.data.fileType,
+      });
+
+      // Upload land documents for farmers (mandatory)
       if (userData.userType === 'farmer') {
         if (landRegistrationFile) {
+          const landRegUpload = await uploadFile(landRegistrationFile, 'land_registration');
           documents.push({
             documentType: 'land_registration',
-            fileName: landRegistrationFile.name,
-            fileSize: landRegistrationFile.size,
-            fileType: landRegistrationFile.type,
+            fileName: landRegUpload.data.fileName,
+            fileUrl: landRegUpload.data.url,
+            fileSize: landRegUpload.data.fileSize,
+            fileType: landRegUpload.data.fileType,
           });
         }
         if (landRecordsFile) {
+          const landRecUpload = await uploadFile(landRecordsFile, 'land_records');
           documents.push({
             documentType: 'land_records',
-            fileName: landRecordsFile.name,
-            fileSize: landRecordsFile.size,
-            fileType: landRecordsFile.type,
+            fileName: landRecUpload.data.fileName,
+            fileUrl: landRecUpload.data.url,
+            fileSize: landRecUpload.data.fileSize,
+            fileType: landRecUpload.data.fileType,
           });
         }
       }
 
-      // Add organic license if provided
+      // Upload optional documents if provided
       if (organicLicenseFile) {
+        const organicUpload = await uploadFile(organicLicenseFile, 'organic_certificate');
         documents.push({
           documentType: 'organic_certificate',
-          fileName: organicLicenseFile.name,
-          fileSize: organicLicenseFile.size,
-          fileType: organicLicenseFile.type,
+          fileName: organicUpload.data.fileName,
+          fileUrl: organicUpload.data.url,
+          fileSize: organicUpload.data.fileSize,
+          fileType: organicUpload.data.fileType,
         });
       }
 
-      // Add other optional farmer documents if provided
       if (userData.userType === 'farmer') {
         if (farmerCertificateFile) {
+          const farmerCertUpload = await uploadFile(farmerCertificateFile, 'farmer_certificate');
           documents.push({
             documentType: 'farmer_certificate',
-            fileName: farmerCertificateFile.name,
-            fileSize: farmerCertificateFile.size,
-            fileType: farmerCertificateFile.type,
+            fileName: farmerCertUpload.data.fileName,
+            fileUrl: farmerCertUpload.data.url,
+            fileSize: farmerCertUpload.data.fileSize,
+            fileType: farmerCertUpload.data.fileType,
           });
         }
         if (cropInsuranceFile) {
+          const cropInsUpload = await uploadFile(cropInsuranceFile, 'crop_insurance');
           documents.push({
             documentType: 'crop_insurance',
-            fileName: cropInsuranceFile.name,
-            fileSize: cropInsuranceFile.size,
-            fileType: cropInsuranceFile.type,
+            fileName: cropInsUpload.data.fileName,
+            fileUrl: cropInsUpload.data.url,
+            fileSize: cropInsUpload.data.fileSize,
+            fileType: cropInsUpload.data.fileType,
           });
         }
         if (fpoMembershipFile) {
+          const fpoUpload = await uploadFile(fpoMembershipFile, 'fpo_membership');
           documents.push({
             documentType: 'fpo_membership',
-            fileName: fpoMembershipFile.name,
-            fileSize: fpoMembershipFile.size,
-            fileType: fpoMembershipFile.type,
+            fileName: fpoUpload.data.fileName,
+            fileUrl: fpoUpload.data.url,
+            fileSize: fpoUpload.data.fileSize,
+            fileType: fpoUpload.data.fileType,
           });
         }
         if (soilHealthCardFile) {
+          const soilUpload = await uploadFile(soilHealthCardFile, 'soil_health_card');
           documents.push({
             documentType: 'soil_health_card',
-            fileName: soilHealthCardFile.name,
-            fileSize: soilHealthCardFile.size,
-            fileType: soilHealthCardFile.type,
+            fileName: soilUpload.data.fileName,
+            fileUrl: soilUpload.data.url,
+            fileSize: soilUpload.data.fileSize,
+            fileType: soilUpload.data.fileType,
           });
         }
         if (otherFarmingDocFile) {
+          const otherUpload = await uploadFile(otherFarmingDocFile, 'other_farming_document');
           documents.push({
             documentType: 'other_farming_document',
-            fileName: otherFarmingDocFile.name,
-            fileSize: otherFarmingDocFile.size,
-            fileType: otherFarmingDocFile.type,
+            fileName: otherUpload.data.fileName,
+            fileUrl: otherUpload.data.url,
+            fileSize: otherUpload.data.fileSize,
+            fileType: otherUpload.data.fileType,
           });
         }
       }
 
+      showSnackbar('Saving document information...', 'info');
+
+      // Submit document information to database
       const response = await fetch('/api/submit-verification-docs', {
         method: 'POST',
         headers: {
@@ -431,7 +476,7 @@ export default function VerificationPage() {
         body: JSON.stringify({
           documents,
           kisanId: userData.userType === 'farmer' ? kisanId : undefined,
-          farmerId: userData.farmerId || null, // Include farmerId for relating documents to farmer
+          farmerId: userData.farmerId || null,
         }),
       });
 
@@ -467,7 +512,10 @@ export default function VerificationPage() {
       }
     } catch (error) {
       console.error('Error submitting documents:', error);
-      showSnackbar('Error submitting documents', 'error');
+      showSnackbar(
+        error instanceof Error ? error.message : 'Error submitting documents',
+        'error'
+      );
     } finally {
       setUploadingDocs(false);
     }

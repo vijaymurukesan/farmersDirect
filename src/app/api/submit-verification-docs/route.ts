@@ -44,11 +44,11 @@ export async function POST(req: NextRequest) {
 
     // Validate each document
     for (const doc of documents) {
-      if (!doc.documentType || !doc.fileName) {
+      if (!doc.documentType || !doc.fileName || !doc.fileUrl) {
         console.error('Invalid document:', doc);
         return NextResponse.json({
           success: false,
-          message: 'Each document must have a type and file name'
+          message: 'Each document must have a type, file name, and file URL'
         }, { status: 400 });
       }
     }
@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
     const documentArray = documents.map(doc => ({
       documentType: doc.documentType,
       fileName: doc.fileName,
+      fileUrl: doc.fileUrl, // Vercel Blob URL
       fileSize: doc.fileSize || 0,
       fileType: doc.fileType || 'unknown',
       verified: false, // Default verification status
