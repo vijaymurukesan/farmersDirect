@@ -60,28 +60,44 @@ export async function POST(req: NextRequest) {
     }
     
     // Generate JWT token
-    const token = jwt.sign(
-      {
-        userId: user._id.toString(),
-        email: decryptedEmail, // Use decrypted email in token
-        userType: user.userType
-      },
-      JWT_SECRET,
-      { expiresIn: '7d' } // Token expires in 7 days
-    );
+    const tokenPayload: any = {
+      userId: user._id.toString(),
+      email: decryptedEmail, // Use decrypted email in token
+      userType: user.userType
+    };
+    
+    // Add farmerId to token if user is a farmer
+    if (user.farmerId) {
+      tokenPayload.farmerId = user.farmerId;
+    }
+    
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '7d' });
+    
+    // Prepare response data
+    const responseData: any = {
+      userId: user._id,
+      fullName: user.fullName,
+      email: decryptedEmail, // Return decrypted email to client
+      userType: user.userType,
+      emailVerified: user.emailVerified,
+      userVerified: user.userVerified
+    };
+    
+    // Add farmerId to response if exists
+    if (user.farmerId) {
+      responseData.farmerId = user.farmerId;
+    }
+    
+    // Add documentStatus if exists
+    if (user.documentStatus) {
+      responseData.documentStatus = user.documentStatus;
+    }
     
     return NextResponse.json({
       success: true,
       message: 'Login successful',
       token: token,
-      data: {
-        userId: user._id,
-        fullName: user.fullName,
-        email: decryptedEmail, // Return decrypted email to client
-        userType: user.userType,
-        emailVerified: user.emailVerified,
-        userVerified: user.userVerified
-      }
+      data: responseData
     }, { status: 200 });
     
   } catch (error) {
