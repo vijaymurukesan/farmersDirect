@@ -141,21 +141,46 @@ export async function PATCH(req: NextRequest) {
       }, { status: 404 });
     }
 
-    // Check if all documents are verified for this user
+    // Check if all mandatory documents are verified for this user
     const verificationDoc = await db.collection('verification-docs').findOne({
       userId: new ObjectId(userId)
     });
 
     if (verificationDoc) {
-      const allVerified = verificationDoc.documents.every((doc: any) => doc.verified === true);
-      const anyRejected = verificationDoc.documents.some((doc: any) => doc.status === 'rejected');
+      // Define mandatory document types
+      const mandatoryTypes = ['aadhaar', 'aadhaar_card', 'land_registration', 'land_records'];
+      
+      // Get all mandatory documents
+      const mandatoryDocs = verificationDoc.documents.filter((doc: any) => 
+        mandatoryTypes.includes(doc.documentType.toLowerCase())
+      );
 
-      // Update user's document status
+      // Check if all mandatory documents are verified
+      const allMandatoryVerified = mandatoryDocs.length > 0 && 
+        mandatoryDocs.every((doc: any) => doc.verified === true);
+      
+      // Check if any document is rejected
+      const anyRejected = verificationDoc.documents.some((doc: any) => doc.status === 'rejected');
+      
+      // Check if any document is not verified (verified: false)
+      const anyUnverified = verificationDoc.documents.some((doc: any) => doc.verified === false);
+
+      // Update user's document status and verification status
       let documentStatus = 'pending';
-      if (allVerified) {
+      let userVerified = false;
+      
+      if (allMandatoryVerified && !anyUnverified) {
+        // All mandatory docs verified AND no unverified docs exist
         documentStatus = 'verified';
+        userVerified = true;
       } else if (anyRejected) {
+        // Any document rejected
         documentStatus = 'rejected';
+        userVerified = false;
+      } else if (anyUnverified) {
+        // Any document not verified (pending verification)
+        documentStatus = 'pending';
+        userVerified = false;
       }
 
       await db.collection('users').updateOne(
@@ -163,6 +188,7 @@ export async function PATCH(req: NextRequest) {
         {
           $set: {
             documentStatus,
+            userVerified,
             updatedAt: new Date()
           }
         }

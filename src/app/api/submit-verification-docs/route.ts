@@ -29,13 +29,14 @@ export async function POST(req: NextRequest) {
       }, { status: 401 });
     }
 
-    const { documents, kisanId, farmerId, verificationMethod, consent } = await req.json();
+    const { documents, kisanId, farmerId, verificationMethod, consent, isOptional } = await req.json();
 
     console.log('Received documents:', JSON.stringify(documents, null, 2));
     console.log('Received kisanId:', kisanId);
     console.log('Received farmerId:', farmerId);
     console.log('Verification method:', verificationMethod);
     console.log('Consent:', consent);
+    console.log('isOptional:', isOptional);
 
     // Handle Kisan ID verification method
     if (verificationMethod === 'kisan') {
@@ -137,7 +138,8 @@ export async function POST(req: NextRequest) {
       fileUrl: doc.fileUrl, // Vercel Blob URL
       fileSize: doc.fileSize || 0,
       fileType: doc.fileType || 'unknown',
-      status: 'pending', // Status: 'pending' or 'verified'
+      mandatory: isOptional === true ? false : true, // true for mandatory, false for optional
+      status: 'pending', // Status: 'pending' or 'verified' or 'rejected'
       verified: false, // Default verification status (kept for backward compatibility)
       verifiedBy: null, // Admin who verified (null initially)
       submittedAt: new Date(),

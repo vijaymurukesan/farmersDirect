@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
       password: hashedPassword, // Store hashed password
       emailVerified: false,
       userVerified: false,
+      documentStatus: 'upload', // Initial status - user needs to upload documents
       createdAt: new Date(),
       updatedAt: new Date()
     };

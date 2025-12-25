@@ -1062,7 +1062,9 @@ export default function AdminPage() {
                                         {(() => {
                                           const mandatoryTypes = [
                                             'aadhaar',
-                                            'land-registration',
+                                            'aadhaar_card',
+                                            'land_registration',
+                                            'land_records',
                                           ];
                                           const mandatoryDocs =
                                             userDocs.documents.filter((doc) =>

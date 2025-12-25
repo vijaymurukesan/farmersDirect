@@ -1417,6 +1417,61 @@ export default function VerificationPage() {
               {(userData.userType !== 'farmer' ||
                 verificationMethod === 'documents') && (
                 <>
+                  {/* Mandatory Documents Section Header */}
+                  <div
+                    style={{
+                      background: '#ffebee',
+                      border: '2px solid #f44336',
+                      borderRadius: '8px',
+                      padding: '1rem 1.5rem',
+                      marginBottom: '1.5rem',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                      }}
+                    >
+                      <span style={{ fontSize: '1.3rem' }}>⚠️</span>
+                      <h3
+                        style={{
+                          color: '#c62828',
+                          margin: 0,
+                          fontSize: '1.2rem',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        Mandatory Documents
+                      </h3>
+                      <span
+                        style={{
+                          marginLeft: 'auto',
+                          background: '#c62828',
+                          color: 'white',
+                          padding: '0.3rem 0.8rem',
+                          borderRadius: '12px',
+                          fontSize: '0.85rem',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        {userData.userType === 'farmer' ? '3 Required' : '1 Required'}
+                      </span>
+                    </div>
+                    <p
+                      style={{
+                        margin: '0.5rem 0 0 0',
+                        color: '#6d4c41',
+                        fontSize: '0.9rem',
+                      }}
+                    >
+                      {userData.userType === 'farmer'
+                        ? 'All three documents are required for farmer verification.'
+                        : 'Aadhaar card is required for buyer verification.'}
+                    </p>
+                  </div>
+
                   {/* Aadhaar Card Upload - Mandatory */}
                   <div
                     className='form-group'
