@@ -33,11 +33,31 @@ export async function GET(req: NextRequest) {
     const client = await clientPromise;
     const db = client.db();
 
-    // Fetch all verification documents
+    // Get userId from query params if provided
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('userId');
+
+    // Build query filter
+    const query: any = {};
+    if (userId) {
+      query.userId = new ObjectId(userId);
+    }
+
+    // Fetch verification documents (filtered by userId if provided)
     const verificationDocs = await db.collection('verification-docs')
-      .find({})
+      .find(query)
       .toArray();
 
+    // If userId was provided, return single document or null
+    if (userId) {
+      const userDoc = verificationDocs.length > 0 ? verificationDocs[0] : null;
+      return NextResponse.json({
+        success: true,
+        data: userDoc
+      });
+    }
+
+    // Otherwise return all documents (for admin)
     return NextResponse.json({
       success: true,
       data: verificationDocs

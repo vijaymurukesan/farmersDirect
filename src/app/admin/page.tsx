@@ -43,14 +43,16 @@ interface VerificationDoc {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [activeMainTab, setActiveMainTab] = useState<'users' | 'pending' | 'products'>(
-    'users'
-  );
+  const [activeMainTab, setActiveMainTab] = useState<
+    'users' | 'pending' | 'products'
+  >('users');
   const [activeUserTab, setActiveUserTab] = useState<
     'farmers' | 'buyers' | 'admins' | 'owner'
   >('farmers');
   const [users, setUsers] = useState<User[]>([]);
-  const [verificationDocs, setVerificationDocs] = useState<VerificationDoc[]>([]);
+  const [verificationDocs, setVerificationDocs] = useState<VerificationDoc[]>(
+    []
+  );
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
@@ -82,7 +84,11 @@ export default function AdminPage() {
   };
 
   // Handle document verification actions
-  const handleDocumentAction = async (userId: string, documentType: string, action: 'accept' | 'reject') => {
+  const handleDocumentAction = async (
+    userId: string,
+    documentType: string,
+    action: 'accept' | 'reject'
+  ) => {
     try {
       const token = localStorage.getItem('authToken');
       const userData = localStorage.getItem('userData');
@@ -98,7 +104,7 @@ export default function AdminPage() {
           userId,
           documentType,
           action,
-          adminEmail: user?.email || 'admin'
+          adminEmail: user?.email || 'admin',
         }),
       });
 
@@ -106,7 +112,7 @@ export default function AdminPage() {
 
       if (result.success) {
         showSnackbar(`Document ${action}ed successfully!`, 'success');
-        
+
         // Refresh data
         const usersResponse = await fetch('/api/user', {
           headers: { Authorization: `Bearer ${token}` },
@@ -134,7 +140,57 @@ export default function AdminPage() {
 
   // Get verification docs for a user
   const getUserDocs = (userId: string) => {
-    return verificationDocs.find(doc => doc.userId === userId);
+    return verificationDocs.find((doc) => doc.userId === userId);
+  };
+
+  // Handle user deletion
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to permanently delete user "${userName}"? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`/api/user?userId=${userId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        showSnackbar(`User "${userName}" deleted successfully!`, 'success');
+
+        // Refresh user list
+        const usersResponse = await fetch('/api/user', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (usersResponse.ok) {
+          const usersData = await usersResponse.json();
+          setUsers(usersData.data || []);
+        }
+
+        // Refresh verification docs
+        const docsResponse = await fetch('/api/verification-docs', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (docsResponse.ok) {
+          const docsData = await docsResponse.json();
+          setVerificationDocs(docsData.data || []);
+        }
+      } else {
+        showSnackbar(result.message || 'Failed to delete user', 'error');
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      showSnackbar('Error deleting user', 'error');
+    }
   };
 
   useEffect(() => {
@@ -220,7 +276,9 @@ export default function AdminPage() {
   const pendingUsers = users.filter(
     (u) =>
       (u.userType === 'farmer' || u.userType === 'buyer') &&
-      (!u.emailVerified || !u.userVerified || (u.userType === 'farmer' && u.documentStatus !== 'verified'))
+      (!u.emailVerified ||
+        !u.userVerified ||
+        (u.userType === 'farmer' && u.documentStatus !== 'verified'))
   );
 
   const getUsersByTab = () => {
@@ -739,7 +797,8 @@ export default function AdminPage() {
               >
                 <strong style={{ color: '#e65100' }}>ℹ️ Pending Access:</strong>{' '}
                 <span style={{ color: '#6d4c41' }}>
-                  Users with pending email verification, user verification, or document verification
+                  Users with pending email verification, user verification, or
+                  document verification
                 </span>
               </div>
 
@@ -778,7 +837,9 @@ export default function AdminPage() {
                     textAlign: 'center',
                   }}
                 >
-                  <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✅</div>
+                  <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>
+                    ✅
+                  </div>
                   <h3 style={{ color: '#388e3c', margin: 0 }}>
                     No pending verifications
                   </h3>
@@ -799,21 +860,29 @@ export default function AdminPage() {
                         <th>User Verified</th>
                         <th>Documents</th>
                         <th>Joined Date</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {pendingUsers.map((user) => {
                         const userDocs = getUserDocs(user._id);
                         const isExpanded = expandedUser === user._id;
-                        
+
                         return (
                           <React.Fragment key={user._id}>
                             <tr>
-                              <td data-label='Name' style={{ fontWeight: 'bold', color: '#388e3c' }}>
+                              <td
+                                data-label='Name'
+                                style={{ fontWeight: 'bold', color: '#388e3c' }}
+                              >
                                 {user.fullName}
                                 {userDocs && userDocs.documents.length > 0 && (
                                   <button
-                                    onClick={() => setExpandedUser(isExpanded ? null : user._id)}
+                                    onClick={() =>
+                                      setExpandedUser(
+                                        isExpanded ? null : user._id
+                                      )
+                                    }
                                     style={{
                                       marginLeft: '0.5rem',
                                       background: '#388e3c',
@@ -822,7 +891,7 @@ export default function AdminPage() {
                                       borderRadius: '4px',
                                       padding: '0.25rem 0.5rem',
                                       cursor: 'pointer',
-                                      fontSize: '0.8rem'
+                                      fontSize: '0.8rem',
                                     }}
                                   >
                                     {isExpanded ? '▼ Hide Docs' : '▶ Show Docs'}
@@ -832,15 +901,23 @@ export default function AdminPage() {
                               <td data-label='User Type'>
                                 <span
                                   style={{
-                                    background: user.userType === 'farmer' ? '#e8f5e9' : '#e3f2fd',
-                                    color: user.userType === 'farmer' ? '#2e7d32' : '#1565c0',
+                                    background:
+                                      user.userType === 'farmer'
+                                        ? '#e8f5e9'
+                                        : '#e3f2fd',
+                                    color:
+                                      user.userType === 'farmer'
+                                        ? '#2e7d32'
+                                        : '#1565c0',
                                     padding: '0.25rem 0.5rem',
                                     borderRadius: '4px',
                                     fontSize: '0.85rem',
                                     fontWeight: 'bold',
                                   }}
                                 >
-                                  {user.userType === 'farmer' ? '🌾 Farmer' : '🛒 Buyer'}
+                                  {user.userType === 'farmer'
+                                    ? '🌾 Farmer'
+                                    : '🛒 Buyer'}
                                 </span>
                               </td>
                               <td data-label='Farmer ID'>
@@ -859,7 +936,9 @@ export default function AdminPage() {
                                   <span style={{ color: '#999' }}>-</span>
                                 )}
                               </td>
-                              <td data-label='Email'>{decryptEmail(user.email)}</td>
+                              <td data-label='Email'>
+                                {decryptEmail(user.email)}
+                              </td>
                               <td data-label='Email Verified'>
                                 <span
                                   className={`status-badge ${
@@ -868,7 +947,9 @@ export default function AdminPage() {
                                       : 'status-unverified'
                                   }`}
                                 >
-                                  {user.emailVerified ? '✓ Verified' : '✗ Unverified'}
+                                  {user.emailVerified
+                                    ? '✓ Verified'
+                                    : '✗ Unverified'}
                                 </span>
                               </td>
                               <td data-label='User Verified'>
@@ -879,160 +960,742 @@ export default function AdminPage() {
                                       : 'status-unverified'
                                   }`}
                                 >
-                                  {user.userVerified ? '✓ Verified' : '✗ Unverified'}
+                                  {user.userVerified
+                                    ? '✓ Verified'
+                                    : '✗ Unverified'}
                                 </span>
                               </td>
                               <td data-label='Documents'>
-                                <span
-                                  className={`status-badge ${
-                                    user.documentStatus === 'verified'
-                                      ? 'status-verified'
-                                      : user.documentStatus === 'pending'
-                                      ? 'status-pending'
-                                      : 'status-unverified'
-                                  }`}
-                                >
-                                  {user.documentStatus === 'verified'
-                                    ? '✓ Verified'
-                                    : user.documentStatus === 'pending'
-                                    ? '⏳ Pending'
-                                    : '✗ Not Submitted'}
-                                </span>
+                                {(() => {
+                                  // Calculate document counts
+                                  const totalDocs =
+                                    userDocs?.documents.length || 0;
+                                  const pendingDocs =
+                                    userDocs?.documents.filter(
+                                      (doc) =>
+                                        !doc.verified &&
+                                        doc.status !== 'rejected'
+                                    ).length || 0;
+
+                                  return (
+                                    <span
+                                      className={`status-badge ${
+                                        user.documentStatus === 'verified'
+                                          ? 'status-verified'
+                                          : user.documentStatus === 'pending'
+                                          ? 'status-pending'
+                                          : 'status-unverified'
+                                      }`}
+                                    >
+                                      {user.documentStatus === 'verified'
+                                        ? '✓ Verified'
+                                        : user.documentStatus === 'pending'
+                                        ? `⏳ Pending (${pendingDocs}/${totalDocs})`
+                                        : '✗ Not Submitted'}
+                                    </span>
+                                  );
+                                })()}
                               </td>
-                              <td data-label='Joined Date' style={{ color: '#6d4c41' }}>
+                              <td
+                                data-label='Joined Date'
+                                style={{ color: '#6d4c41' }}
+                              >
                                 {formatDate(user.createdAt)}
                               </td>
+                              <td data-label='Actions'>
+                                <button
+                                  onClick={() =>
+                                    handleDeleteUser(user._id, user.fullName)
+                                  }
+                                  style={{
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    padding: '0.5rem 0.75rem',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 'bold',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    transition: 'all 0.2s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background =
+                                      '#cccccc';
+                                    e.currentTarget.style.transform =
+                                      'scale(1.05)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background =
+                                      'transparent';
+                                    e.currentTarget.style.transform =
+                                      'scale(1)';
+                                  }}
+                                  title={`Delete user ${user.fullName}`}
+                                >
+                                  🗑️
+                                </button>
+                              </td>
                             </tr>
-                            
+
                             {/* Expanded Documents Row */}
                             {isExpanded && userDocs && (
                               <tr>
-                                <td colSpan={8} style={{ padding: 0, background: '#f5f5f5' }}>
+                                <td
+                                  colSpan={8}
+                                  style={{ padding: 0, background: '#f5f5f5' }}
+                                >
                                   <div style={{ padding: '1rem' }}>
-                                    <h4 style={{ color: '#388e3c', marginTop: 0 }}>📄 Submitted Documents</h4>
+                                    <h4
+                                      style={{ color: '#388e3c', marginTop: 0 }}
+                                    >
+                                      📄 Submitted Documents
+                                    </h4>
                                     {userDocs.documents.length === 0 ? (
-                                      <p style={{ color: '#757575' }}>No documents submitted yet</p>
+                                      <p style={{ color: '#757575' }}>
+                                        No documents submitted yet
+                                      </p>
                                     ) : (
-                                      <div style={{ display: 'grid', gap: '1rem' }}>
-                                        {userDocs.documents.map((doc, index) => (
-                                          <div
-                                            key={index}
-                                            style={{
-                                              background: 'white',
-                                              border: `2px solid ${
-                                                doc.verified
-                                                  ? '#4caf50'
-                                                  : doc.status === 'rejected'
-                                                  ? '#f44336'
-                                                  : '#ff9800'
-                                              }`,
-                                              borderRadius: '8px',
-                                              padding: '1rem',
-                                              display: 'flex',
-                                              justifyContent: 'space-between',
-                                              alignItems: 'center',
-                                              flexWrap: 'wrap',
-                                              gap: '1rem'
-                                            }}
-                                          >
-                                            <div style={{ flex: 1 }}>
-                                              <div style={{ fontWeight: 'bold', color: '#388e3c', marginBottom: '0.5rem' }}>
-                                                {doc.documentType}
-                                              </div>
-                                              <div style={{ fontSize: '0.9rem', color: '#666' }}>
-                                                📎 {doc.fileName}
-                                              </div>
-                                              {doc.fileSize && (
-                                                <div style={{ fontSize: '0.85rem', color: '#999', marginTop: '0.25rem' }}>
-                                                  Size: {(doc.fileSize / 1024).toFixed(2)} KB
-                                                </div>
-                                              )}
-                                              <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
-                                                Submitted: {new Date(doc.submittedAt).toLocaleDateString()}
-                                              </div>
-                                              {doc.verifiedBy && (
-                                                <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
-                                                  Verified by: {doc.verifiedBy}
-                                                </div>
-                                              )}
-                                            </div>
-                                            
-                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                              <span
-                                                className={`status-badge ${
-                                                  doc.verified
-                                                    ? 'status-verified'
-                                                    : doc.status === 'rejected'
-                                                    ? 'status-unverified'
-                                                    : 'status-pending'
-                                                }`}
-                                                style={{ marginRight: '0.5rem' }}
-                                              >
-                                                {doc.verified
-                                                  ? '✓ Verified'
-                                                  : doc.status === 'rejected'
-                                                  ? '✗ Rejected'
-                                                  : '⏳ Pending'}
-                                              </span>
-                                              
-                                              <a
-                                                href={doc.fileUrl}
-                                                download={doc.fileName}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                style={{
-                                                  background: '#2196f3',
-                                                  color: 'white',
-                                                  border: 'none',
-                                                  borderRadius: '4px',
-                                                  padding: '0.5rem 1rem',
-                                                  cursor: 'pointer',
-                                                  textDecoration: 'none',
-                                                  fontSize: '0.85rem',
-                                                  display: 'inline-block'
-                                                }}
-                                              >
-                                                ⬇️ Download
-                                              </a>
-                                              
-                                              {!doc.verified && doc.status !== 'rejected' && (
-                                                <>
-                                                  <button
-                                                    onClick={() => handleDocumentAction(user._id, doc.documentType, 'accept')}
+                                      <>
+                                        {/* Define mandatory and optional document types */}
+                                        {(() => {
+                                          const mandatoryTypes = [
+                                            'aadhaar',
+                                            'land-registration',
+                                          ];
+                                          const mandatoryDocs =
+                                            userDocs.documents.filter((doc) =>
+                                              mandatoryTypes.includes(
+                                                doc.documentType.toLowerCase()
+                                              )
+                                            );
+                                          const optionalDocs =
+                                            userDocs.documents.filter(
+                                              (doc) =>
+                                                !mandatoryTypes.includes(
+                                                  doc.documentType.toLowerCase()
+                                                )
+                                            );
+
+                                          return (
+                                            <>
+                                              {/* Mandatory Documents Section */}
+                                              {mandatoryDocs.length > 0 && (
+                                                <div
+                                                  style={{
+                                                    marginBottom: '2rem',
+                                                  }}
+                                                >
+                                                  <div
                                                     style={{
-                                                      background: '#4caf50',
-                                                      color: 'white',
-                                                      border: 'none',
-                                                      borderRadius: '4px',
-                                                      padding: '0.5rem 1rem',
-                                                      cursor: 'pointer',
-                                                      fontSize: '0.85rem',
-                                                      fontWeight: 'bold'
+                                                      background: '#ffebee',
+                                                      border:
+                                                        '2px solid #f44336',
+                                                      borderRadius: '8px',
+                                                      padding: '0.75rem 1rem',
+                                                      marginBottom: '1rem',
+                                                      display: 'flex',
+                                                      alignItems: 'center',
+                                                      gap: '0.5rem',
                                                     }}
                                                   >
-                                                    ✓ Accept
-                                                  </button>
-                                                  <button
-                                                    onClick={() => handleDocumentAction(user._id, doc.documentType, 'reject')}
+                                                    <span
+                                                      style={{
+                                                        fontSize: '1.2rem',
+                                                      }}
+                                                    >
+                                                      ⚠️
+                                                    </span>
+                                                    <strong
+                                                      style={{
+                                                        color: '#c62828',
+                                                      }}
+                                                    >
+                                                      Mandatory Documents
+                                                    </strong>
+                                                    <span
+                                                      style={{
+                                                        marginLeft: 'auto',
+                                                        background: '#c62828',
+                                                        color: 'white',
+                                                        padding:
+                                                          '0.25rem 0.75rem',
+                                                        borderRadius: '12px',
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: 'bold',
+                                                      }}
+                                                    >
+                                                      {mandatoryDocs.length} /{' '}
+                                                      {mandatoryTypes.length}{' '}
+                                                      Required
+                                                    </span>
+                                                  </div>
+                                                  <div
                                                     style={{
-                                                      background: '#f44336',
-                                                      color: 'white',
-                                                      border: 'none',
-                                                      borderRadius: '4px',
-                                                      padding: '0.5rem 1rem',
-                                                      cursor: 'pointer',
-                                                      fontSize: '0.85rem',
-                                                      fontWeight: 'bold'
+                                                      display: 'grid',
+                                                      gap: '1rem',
                                                     }}
                                                   >
-                                                    ✗ Reject
-                                                  </button>
-                                                </>
+                                                    {mandatoryDocs.map(
+                                                      (doc, index) => (
+                                                        <div
+                                                          key={`mandatory-${index}`}
+                                                          style={{
+                                                            background: 'white',
+                                                            border: `2px solid ${
+                                                              doc.verified
+                                                                ? '#4caf50'
+                                                                : doc.status ===
+                                                                  'rejected'
+                                                                ? '#f44336'
+                                                                : '#ff9800'
+                                                            }`,
+                                                            borderRadius: '8px',
+                                                            padding: '1rem',
+                                                            display: 'flex',
+                                                            justifyContent:
+                                                              'space-between',
+                                                            alignItems:
+                                                              'center',
+                                                            flexWrap: 'wrap',
+                                                            gap: '1rem',
+                                                          }}
+                                                        >
+                                                          <div
+                                                            style={{ flex: 1 }}
+                                                          >
+                                                            <div
+                                                              style={{
+                                                                fontWeight:
+                                                                  'bold',
+                                                                color:
+                                                                  '#388e3c',
+                                                                marginBottom:
+                                                                  '0.5rem',
+                                                                display: 'flex',
+                                                                alignItems:
+                                                                  'center',
+                                                                gap: '0.5rem',
+                                                              }}
+                                                            >
+                                                              <span
+                                                                style={{
+                                                                  background:
+                                                                    '#ffebee',
+                                                                  color:
+                                                                    '#c62828',
+                                                                  padding:
+                                                                    '0.2rem 0.5rem',
+                                                                  borderRadius:
+                                                                    '4px',
+                                                                  fontSize:
+                                                                    '0.75rem',
+                                                                  fontWeight:
+                                                                    'bold',
+                                                                }}
+                                                              >
+                                                                REQUIRED
+                                                              </span>
+                                                              {doc.documentType}
+                                                            </div>
+                                                            <div
+                                                              style={{
+                                                                fontSize:
+                                                                  '0.9rem',
+                                                                color: '#666',
+                                                              }}
+                                                            >
+                                                              📎 {doc.fileName}
+                                                            </div>
+                                                            {doc.fileSize && (
+                                                              <div
+                                                                style={{
+                                                                  fontSize:
+                                                                    '0.85rem',
+                                                                  color: '#999',
+                                                                  marginTop:
+                                                                    '0.25rem',
+                                                                }}
+                                                              >
+                                                                Size:{' '}
+                                                                {(
+                                                                  doc.fileSize /
+                                                                  1024
+                                                                ).toFixed(
+                                                                  2
+                                                                )}{' '}
+                                                                KB
+                                                              </div>
+                                                            )}
+                                                            <div
+                                                              style={{
+                                                                fontSize:
+                                                                  '0.85rem',
+                                                                color: '#666',
+                                                                marginTop:
+                                                                  '0.25rem',
+                                                              }}
+                                                            >
+                                                              Submitted:{' '}
+                                                              {new Date(
+                                                                doc.submittedAt
+                                                              ).toLocaleDateString()}
+                                                            </div>
+                                                            {doc.verifiedBy && (
+                                                              <div
+                                                                style={{
+                                                                  fontSize:
+                                                                    '0.85rem',
+                                                                  color: '#666',
+                                                                  marginTop:
+                                                                    '0.25rem',
+                                                                }}
+                                                              >
+                                                                Verified by:{' '}
+                                                                {doc.verifiedBy}
+                                                              </div>
+                                                            )}
+                                                          </div>
+
+                                                          <div
+                                                            style={{
+                                                              display: 'flex',
+                                                              gap: '0.5rem',
+                                                              alignItems:
+                                                                'center',
+                                                            }}
+                                                          >
+                                                            <span
+                                                              className={`status-badge ${
+                                                                doc.verified
+                                                                  ? 'status-verified'
+                                                                  : doc.status ===
+                                                                    'rejected'
+                                                                  ? 'status-unverified'
+                                                                  : 'status-pending'
+                                                              }`}
+                                                              style={{
+                                                                marginRight:
+                                                                  '0.5rem',
+                                                              }}
+                                                            >
+                                                              {doc.verified
+                                                                ? '✓ Verified'
+                                                                : doc.status ===
+                                                                  'rejected'
+                                                                ? '✗ Rejected'
+                                                                : '⏳ Pending'}
+                                                            </span>
+
+                                                            <a
+                                                              href={doc.fileUrl}
+                                                              download={
+                                                                doc.fileName
+                                                              }
+                                                              target='_blank'
+                                                              rel='noopener noreferrer'
+                                                              style={{
+                                                                background:
+                                                                  '#2196f3',
+                                                                color: 'white',
+                                                                border: 'none',
+                                                                borderRadius:
+                                                                  '4px',
+                                                                padding:
+                                                                  '0.5rem 1rem',
+                                                                cursor:
+                                                                  'pointer',
+                                                                textDecoration:
+                                                                  'none',
+                                                                fontSize:
+                                                                  '0.85rem',
+                                                                display:
+                                                                  'inline-block',
+                                                              }}
+                                                            >
+                                                              ⬇️ Download
+                                                            </a>
+
+                                                            {!doc.verified &&
+                                                              doc.status !==
+                                                                'rejected' && (
+                                                                <>
+                                                                  <button
+                                                                    onClick={() =>
+                                                                      handleDocumentAction(
+                                                                        user._id,
+                                                                        doc.documentType,
+                                                                        'accept'
+                                                                      )
+                                                                    }
+                                                                    style={{
+                                                                      background:
+                                                                        '#4caf50',
+                                                                      color:
+                                                                        'white',
+                                                                      border:
+                                                                        'none',
+                                                                      borderRadius:
+                                                                        '4px',
+                                                                      padding:
+                                                                        '0.5rem 1rem',
+                                                                      cursor:
+                                                                        'pointer',
+                                                                      fontSize:
+                                                                        '0.85rem',
+                                                                      fontWeight:
+                                                                        'bold',
+                                                                    }}
+                                                                  >
+                                                                    ✓ Accept
+                                                                  </button>
+                                                                  <button
+                                                                    onClick={() =>
+                                                                      handleDocumentAction(
+                                                                        user._id,
+                                                                        doc.documentType,
+                                                                        'reject'
+                                                                      )
+                                                                    }
+                                                                    style={{
+                                                                      background:
+                                                                        '#f44336',
+                                                                      color:
+                                                                        'white',
+                                                                      border:
+                                                                        'none',
+                                                                      borderRadius:
+                                                                        '4px',
+                                                                      padding:
+                                                                        '0.5rem 1rem',
+                                                                      cursor:
+                                                                        'pointer',
+                                                                      fontSize:
+                                                                        '0.85rem',
+                                                                      fontWeight:
+                                                                        'bold',
+                                                                    }}
+                                                                  >
+                                                                    ✗ Reject
+                                                                  </button>
+                                                                </>
+                                                              )}
+                                                          </div>
+                                                        </div>
+                                                      )
+                                                    )}
+                                                  </div>
+                                                </div>
                                               )}
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
+
+                                              {/* Optional Documents Section */}
+                                              {optionalDocs.length > 0 && (
+                                                <div>
+                                                  <div
+                                                    style={{
+                                                      background: '#e3f2fd',
+                                                      border:
+                                                        '2px solid #2196f3',
+                                                      borderRadius: '8px',
+                                                      padding: '0.75rem 1rem',
+                                                      marginBottom: '1rem',
+                                                      display: 'flex',
+                                                      alignItems: 'center',
+                                                      gap: '0.5rem',
+                                                    }}
+                                                  >
+                                                    <span
+                                                      style={{
+                                                        fontSize: '1.2rem',
+                                                      }}
+                                                    >
+                                                      ℹ️
+                                                    </span>
+                                                    <strong
+                                                      style={{
+                                                        color: '#1565c0',
+                                                      }}
+                                                    >
+                                                      Optional Documents
+                                                    </strong>
+                                                    <span
+                                                      style={{
+                                                        marginLeft: 'auto',
+                                                        background: '#1565c0',
+                                                        color: 'white',
+                                                        padding:
+                                                          '0.25rem 0.75rem',
+                                                        borderRadius: '12px',
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: 'bold',
+                                                      }}
+                                                    >
+                                                      {optionalDocs.length}{' '}
+                                                      Additional
+                                                    </span>
+                                                  </div>
+                                                  <div
+                                                    style={{
+                                                      display: 'grid',
+                                                      gap: '1rem',
+                                                    }}
+                                                  >
+                                                    {optionalDocs.map(
+                                                      (doc, index) => (
+                                                        <div
+                                                          key={`optional-${index}`}
+                                                          style={{
+                                                            background: 'white',
+                                                            border: `2px solid ${
+                                                              doc.verified
+                                                                ? '#4caf50'
+                                                                : doc.status ===
+                                                                  'rejected'
+                                                                ? '#f44336'
+                                                                : '#ff9800'
+                                                            }`,
+                                                            borderRadius: '8px',
+                                                            padding: '1rem',
+                                                            display: 'flex',
+                                                            justifyContent:
+                                                              'space-between',
+                                                            alignItems:
+                                                              'center',
+                                                            flexWrap: 'wrap',
+                                                            gap: '1rem',
+                                                          }}
+                                                        >
+                                                          <div
+                                                            style={{ flex: 1 }}
+                                                          >
+                                                            <div
+                                                              style={{
+                                                                fontWeight:
+                                                                  'bold',
+                                                                color:
+                                                                  '#388e3c',
+                                                                marginBottom:
+                                                                  '0.5rem',
+                                                                display: 'flex',
+                                                                alignItems:
+                                                                  'center',
+                                                                gap: '0.5rem',
+                                                              }}
+                                                            >
+                                                              <span
+                                                                style={{
+                                                                  background:
+                                                                    '#e3f2fd',
+                                                                  color:
+                                                                    '#1565c0',
+                                                                  padding:
+                                                                    '0.2rem 0.5rem',
+                                                                  borderRadius:
+                                                                    '4px',
+                                                                  fontSize:
+                                                                    '0.75rem',
+                                                                  fontWeight:
+                                                                    'bold',
+                                                                }}
+                                                              >
+                                                                OPTIONAL
+                                                              </span>
+                                                              {doc.documentType}
+                                                            </div>
+                                                            <div
+                                                              style={{
+                                                                fontSize:
+                                                                  '0.9rem',
+                                                                color: '#666',
+                                                              }}
+                                                            >
+                                                              📎 {doc.fileName}
+                                                            </div>
+                                                            {doc.fileSize && (
+                                                              <div
+                                                                style={{
+                                                                  fontSize:
+                                                                    '0.85rem',
+                                                                  color: '#999',
+                                                                  marginTop:
+                                                                    '0.25rem',
+                                                                }}
+                                                              >
+                                                                Size:{' '}
+                                                                {(
+                                                                  doc.fileSize /
+                                                                  1024
+                                                                ).toFixed(
+                                                                  2
+                                                                )}{' '}
+                                                                KB
+                                                              </div>
+                                                            )}
+                                                            <div
+                                                              style={{
+                                                                fontSize:
+                                                                  '0.85rem',
+                                                                color: '#666',
+                                                                marginTop:
+                                                                  '0.25rem',
+                                                              }}
+                                                            >
+                                                              Submitted:{' '}
+                                                              {new Date(
+                                                                doc.submittedAt
+                                                              ).toLocaleDateString()}
+                                                            </div>
+                                                            {doc.verifiedBy && (
+                                                              <div
+                                                                style={{
+                                                                  fontSize:
+                                                                    '0.85rem',
+                                                                  color: '#666',
+                                                                  marginTop:
+                                                                    '0.25rem',
+                                                                }}
+                                                              >
+                                                                Verified by:{' '}
+                                                                {doc.verifiedBy}
+                                                              </div>
+                                                            )}
+                                                          </div>
+
+                                                          <div
+                                                            style={{
+                                                              display: 'flex',
+                                                              gap: '0.5rem',
+                                                              alignItems:
+                                                                'center',
+                                                            }}
+                                                          >
+                                                            <span
+                                                              className={`status-badge ${
+                                                                doc.verified
+                                                                  ? 'status-verified'
+                                                                  : doc.status ===
+                                                                    'rejected'
+                                                                  ? 'status-unverified'
+                                                                  : 'status-pending'
+                                                              }`}
+                                                              style={{
+                                                                marginRight:
+                                                                  '0.5rem',
+                                                              }}
+                                                            >
+                                                              {doc.verified
+                                                                ? '✓ Verified'
+                                                                : doc.status ===
+                                                                  'rejected'
+                                                                ? '✗ Rejected'
+                                                                : '⏳ Pending'}
+                                                            </span>
+
+                                                            <a
+                                                              href={doc.fileUrl}
+                                                              download={
+                                                                doc.fileName
+                                                              }
+                                                              target='_blank'
+                                                              rel='noopener noreferrer'
+                                                              style={{
+                                                                background:
+                                                                  '#2196f3',
+                                                                color: 'white',
+                                                                border: 'none',
+                                                                borderRadius:
+                                                                  '4px',
+                                                                padding:
+                                                                  '0.5rem 1rem',
+                                                                cursor:
+                                                                  'pointer',
+                                                                textDecoration:
+                                                                  'none',
+                                                                fontSize:
+                                                                  '0.85rem',
+                                                                display:
+                                                                  'inline-block',
+                                                              }}
+                                                            >
+                                                              ⬇️ Download
+                                                            </a>
+
+                                                            {!doc.verified &&
+                                                              doc.status !==
+                                                                'rejected' && (
+                                                                <>
+                                                                  <button
+                                                                    onClick={() =>
+                                                                      handleDocumentAction(
+                                                                        user._id,
+                                                                        doc.documentType,
+                                                                        'accept'
+                                                                      )
+                                                                    }
+                                                                    style={{
+                                                                      background:
+                                                                        '#4caf50',
+                                                                      color:
+                                                                        'white',
+                                                                      border:
+                                                                        'none',
+                                                                      borderRadius:
+                                                                        '4px',
+                                                                      padding:
+                                                                        '0.5rem 1rem',
+                                                                      cursor:
+                                                                        'pointer',
+                                                                      fontSize:
+                                                                        '0.85rem',
+                                                                      fontWeight:
+                                                                        'bold',
+                                                                    }}
+                                                                  >
+                                                                    ✓ Accept
+                                                                  </button>
+                                                                  <button
+                                                                    onClick={() =>
+                                                                      handleDocumentAction(
+                                                                        user._id,
+                                                                        doc.documentType,
+                                                                        'reject'
+                                                                      )
+                                                                    }
+                                                                    style={{
+                                                                      background:
+                                                                        '#f44336',
+                                                                      color:
+                                                                        'white',
+                                                                      border:
+                                                                        'none',
+                                                                      borderRadius:
+                                                                        '4px',
+                                                                      padding:
+                                                                        '0.5rem 1rem',
+                                                                      cursor:
+                                                                        'pointer',
+                                                                      fontSize:
+                                                                        '0.85rem',
+                                                                      fontWeight:
+                                                                        'bold',
+                                                                    }}
+                                                                  >
+                                                                    ✗ Reject
+                                                                  </button>
+                                                                </>
+                                                              )}
+                                                          </div>
+                                                        </div>
+                                                      )
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </>
+                                          );
+                                        })()}
+                                      </>
                                     )}
                                   </div>
                                 </td>

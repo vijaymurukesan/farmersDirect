@@ -29,12 +29,86 @@ export async function POST(req: NextRequest) {
       }, { status: 401 });
     }
 
-    const { documents, kisanId, farmerId } = await req.json();
+    const { documents, kisanId, farmerId, verificationMethod, consent } = await req.json();
 
     console.log('Received documents:', JSON.stringify(documents, null, 2));
     console.log('Received kisanId:', kisanId);
     console.log('Received farmerId:', farmerId);
+    console.log('Verification method:', verificationMethod);
+    console.log('Consent:', consent);
 
+    // Handle Kisan ID verification method
+    if (verificationMethod === 'kisan') {
+      if (!kisanId || !consent) {
+        return NextResponse.json({
+          success: false,
+          message: 'Kisan ID and consent are required for Kisan verification'
+        }, { status: 400 });
+      }
+
+      const client = await clientPromise;
+      const db = client.db();
+
+      // Check if verification document already exists for this user
+      const existingDoc = await db.collection('verification-docs').findOne({
+        userId: new ObjectId(decoded.userId)
+      });
+
+      let result;
+      if (existingDoc) {
+        // Update existing document with Kisan ID
+        result = await db.collection('verification-docs').updateOne(
+          { userId: new ObjectId(decoded.userId) },
+          { 
+            $set: { 
+              kisanId: kisanId,
+              verificationMethod: 'kisan',
+              kisanConsent: consent,
+              documentStatus: 'pending', // Add status tracking
+              updatedAt: new Date(),
+              ...(farmerId && { farmerId })
+            }
+          }
+        );
+      } else {
+        // Create new document with Kisan ID
+        const newVerificationDoc: any = {
+          userId: new ObjectId(decoded.userId),
+          kisanId: kisanId,
+          verificationMethod: 'kisan',
+          kisanConsent: consent,
+          documentStatus: 'pending', // Add status tracking
+          documents: [], // Empty documents array for Kisan verification
+          submittedAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        if (farmerId) {
+          newVerificationDoc.farmerId = farmerId;
+        }
+        
+        result = await db.collection('verification-docs').insertOne(newVerificationDoc);
+      }
+
+      // Update user's document status
+      await db.collection('users').updateOne(
+        { _id: new ObjectId(decoded.userId) },
+        { 
+          $set: { 
+            documentStatus: 'pending',
+            updatedAt: new Date()
+          }
+        }
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: 'Kisan ID submitted successfully. You will receive an OTP for verification.',
+        verificationMethod: 'kisan'
+      }, { status: 200 });
+    }
+
+    // Regular document upload validation
     if (!documents || !Array.isArray(documents) || documents.length === 0) {
       return NextResponse.json({
         success: false,
@@ -63,7 +137,8 @@ export async function POST(req: NextRequest) {
       fileUrl: doc.fileUrl, // Vercel Blob URL
       fileSize: doc.fileSize || 0,
       fileType: doc.fileType || 'unknown',
-      verified: false, // Default verification status
+      status: 'pending', // Status: 'pending' or 'verified'
+      verified: false, // Default verification status (kept for backward compatibility)
       verifiedBy: null, // Admin who verified (null initially)
       submittedAt: new Date(),
       verifiedAt: null
@@ -78,19 +153,61 @@ export async function POST(req: NextRequest) {
 
     let result;
     if (existingDoc) {
-      // Update existing document by appending new documents to the array
-      result = await db.collection('verification-docs').updateOne(
-        { userId: new ObjectId(decoded.userId) },
-        { 
-          $push: { documents: { $each: documentArray } },
-          $set: { 
-            updatedAt: new Date(),
-            ...(farmerId && { farmerId }), // Update farmerId if provided
-            ...(kisanId && { kisanId }) // Update kisanId if provided
-          }
+      // Avoid duplicates: Update existing documents or add new ones
+      const existingDocs = existingDoc.documents || [];
+      const existingDocTypes = new Set(existingDocs.map((d: any) => d.documentType));
+      
+      // Separate documents into updates and new additions
+      const documentsToUpdate: any[] = [];
+      const documentsToAdd: any[] = [];
+      
+      for (const doc of documentArray) {
+        if (existingDocTypes.has(doc.documentType)) {
+          documentsToUpdate.push(doc);
+        } else {
+          documentsToAdd.push(doc);
         }
-      );
+      }
+      
+      // Build update operations
+      const updateOps: any = {
+        $set: { 
+          updatedAt: new Date(),
+          ...(farmerId && { farmerId }), // Update farmerId if provided
+          ...(kisanId && { kisanId }) // Update kisanId if provided
+        }
+      };
+      
+      // Add new documents that don't exist
+      if (documentsToAdd.length > 0) {
+        updateOps.$push = { documents: { $each: documentsToAdd } };
+      }
+      
+      // Update existing documents by document type
+      for (const doc of documentsToUpdate) {
+        updateOps.$set[`documents.$[elem_${doc.documentType}]`] = doc;
+      }
+      
+      // Build array filters for updating specific documents
+      const arrayFilters: any[] = documentsToUpdate.map(doc => ({
+        [`elem_${doc.documentType}.documentType`]: doc.documentType
+      }));
+      
+      if (arrayFilters.length > 0) {
+        result = await db.collection('verification-docs').updateOne(
+          { userId: new ObjectId(decoded.userId) },
+          updateOps,
+          { arrayFilters }
+        );
+      } else {
+        result = await db.collection('verification-docs').updateOne(
+          { userId: new ObjectId(decoded.userId) },
+          updateOps
+        );
+      }
+      
       console.log('Updated existing document. Modified count:', result.modifiedCount);
+      console.log('Documents updated:', documentsToUpdate.length, 'Documents added:', documentsToAdd.length);
     } else {
       // Create new document with array of documents
       const newVerificationDoc: any = {

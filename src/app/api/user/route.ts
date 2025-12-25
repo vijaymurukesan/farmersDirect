@@ -80,9 +80,13 @@ export async function POST(req: NextRequest) {
       updatedAt: new Date()
     };
     
-    // Add farmerId only if user is a farmer
+    // Add farmerId and cultivationArea only if user is a farmer
     if (farmerId) {
       userRecord.farmerId = farmerId;
+      // Add cultivation area if provided
+      if (userData.cultivationArea) {
+        userRecord.cultivationArea = userData.cultivationArea;
+      }
     }
     
     // Insert the user into MongoDB
@@ -166,6 +170,85 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: false,
       message: 'Failed to fetch users',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const authHeader = req.headers.get('authorization');
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({
+        success: false,
+        message: 'Unauthorized'
+      }, { status: 401 });
+    }
+
+    const token = authHeader.substring(7);
+    
+    // Verify JWT token
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (error) {
+      return NextResponse.json({
+        success: false,
+        message: 'Invalid token'
+      }, { status: 401 });
+    }
+
+    // Only admin and owner can delete users (check from JWT token)
+    if (decoded.userType !== 'admin' && decoded.userType !== 'owner') {
+      return NextResponse.json({
+        success: false,
+        message: 'Only admins and owners can delete users'
+      }, { status: 403 });
+    }
+
+    // Get userId from query params
+    const client = await clientPromise;
+    const db = client.db();
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('userId');
+
+    if (!userId) {
+      return NextResponse.json({
+        success: false,
+        message: 'User ID is required'
+      }, { status: 400 });
+    }
+
+    const { ObjectId } = require('mongodb');
+
+    // Delete user from users collection
+    const userResult = await db.collection('users').deleteOne({ 
+      _id: new ObjectId(userId) 
+    });
+
+    if (userResult.deletedCount === 0) {
+      return NextResponse.json({
+        success: false,
+        message: 'User not found'
+      }, { status: 404 });
+    }
+
+    // Also delete associated verification documents if they exist
+    await db.collection('verification-docs').deleteMany({ 
+      userId: new ObjectId(userId)
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'User and associated data deleted successfully'
+    }, { status: 200 });
+
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    return NextResponse.json({
+      success: false,
+      message: 'Internal server error',
       error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }

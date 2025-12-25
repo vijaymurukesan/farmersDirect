@@ -5,11 +5,24 @@ import Snackbar from '../components/Snackbar';
 
 export default function RegisterPage() {
   const router = useRouter();
+
+  // Calculate max date (18 years ago from today)
+  const getMaxDate = () => {
+    const today = new Date();
+    const maxDate = new Date(
+      today.getFullYear() - 18,
+      today.getMonth(),
+      today.getDate()
+    );
+    return maxDate.toISOString().split('T')[0];
+  };
+
   const [formData, setFormData] = useState({
     fullName: '',
     dob: '',
     email: '',
     userType: '',
+    cultivationArea: '',
     password: '',
     confirmPassword: '',
   });
@@ -118,10 +131,44 @@ export default function RegisterPage() {
       return;
     }
 
+    // Date of Birth validation (must be at least 18 years old)
+    if (formData.dob) {
+      const today = new Date();
+      const birthDate = new Date(formData.dob);
+      const age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      const dayDiff = today.getDate() - birthDate.getDate();
+
+      // Check if they haven't had their birthday yet this year
+      const actualAge =
+        monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
+
+      if (actualAge < 18) {
+        showSnackbar('You must be at least 18 years old to register', 'error');
+        return;
+      }
+    }
+
     // User type validation
     if (!formData.userType) {
       showSnackbar('Please select user type (Farmer or Buyer)', 'error');
       return;
+    }
+
+    // Cultivation area validation for farmers
+    if (formData.userType === 'farmer') {
+      if (!formData.cultivationArea || formData.cultivationArea.trim() === '') {
+        showSnackbar('Please enter cultivation area in acres', 'error');
+        return;
+      }
+      const areaValue = parseFloat(formData.cultivationArea);
+      if (isNaN(areaValue) || areaValue <= 0) {
+        showSnackbar(
+          'Please enter a valid cultivation area (greater than 0)',
+          'error'
+        );
+        return;
+      }
     }
 
     // Password validation
@@ -151,6 +198,10 @@ export default function RegisterPage() {
           dob: formData.dob,
           email: formData.email,
           userType: formData.userType,
+          cultivationArea:
+            formData.userType === 'farmer'
+              ? formData.cultivationArea
+              : undefined,
           password: formData.password,
           emailVerified: false,
           userVerified: false,
@@ -311,8 +362,19 @@ export default function RegisterPage() {
               className='form-input'
               value={formData.dob}
               onChange={(e) => handleInputChange('dob', e.target.value)}
+              max={getMaxDate()}
               required
             />
+            <span
+              style={{
+                display: 'block',
+                fontSize: '0.85rem',
+                color: '#757575',
+                marginTop: '0.25rem',
+              }}
+            >
+              You must be at least 18 years old to register
+            </span>
           </div>
 
           <div style={{ marginBottom: '1.5rem' }}>
@@ -406,6 +468,53 @@ export default function RegisterPage() {
               <option value='buyer'>🛒 Buyer</option>
             </select>
           </div>
+
+          {/* Conditional Cultivation Area field for Farmers */}
+          {formData.userType === 'farmer' && (
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label
+                style={{
+                  display: 'block',
+                  color: '#388e3c',
+                  fontWeight: 'bold',
+                  marginBottom: '0.5rem',
+                  fontSize: '0.9rem',
+                }}
+              >
+                Total Cultivation Area (in Acres) *
+              </label>
+              <input
+                type='number'
+                className='form-input'
+                value={formData.cultivationArea}
+                onChange={(e) =>
+                  handleInputChange('cultivationArea', e.target.value)
+                }
+                required
+                placeholder='Enter cultivation area in acres'
+                min='0.01'
+                step='0.01'
+                style={{
+                  padding: '0.75rem',
+                  border: '2px solid #c8e6c9',
+                  borderRadius: '8px',
+                  fontSize: '1rem',
+                  color: '#000000',
+                  width: '100%',
+                }}
+              />
+              <p
+                style={{
+                  color: '#6d4c41',
+                  fontSize: '0.8rem',
+                  marginTop: '0.5rem',
+                  marginBottom: 0,
+                }}
+              >
+                💡 Enter the total land area you use for farming
+              </p>
+            </div>
+          )}
 
           <div style={{ marginBottom: '1.5rem' }}>
             <label
