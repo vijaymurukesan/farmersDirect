@@ -2,6 +2,7 @@ import clientPromise from '@/app/db/mongodb';
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { ObjectId } from 'mongodb';
+import { decryptEmail } from '@/app/lib/encryption';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
@@ -152,6 +153,30 @@ export async function PATCH(req: NextRequest) {
         }
       );
 
+      // Send verification success email if user is verified
+      if (action === 'accept') {
+        try {
+          const user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+          if (user) {
+            const decryptedEmail = decryptEmail(user.email);
+            
+            // Send email notification asynchronously (don't wait for it)
+            fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/send-verification-success-email`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: decryptedEmail,
+                fullName: user.fullName,
+                userType: user.userType
+              })
+            }).catch(err => console.error('Failed to send verification email:', err));
+          }
+        } catch (emailError) {
+          console.error('Error sending verification email:', emailError);
+          // Don't fail the request if email fails
+        }
+      }
+
       return NextResponse.json({
         success: true,
         message: `Kisan ID ${action}ed successfully`
@@ -285,6 +310,10 @@ export async function PATCH(req: NextRequest) {
         }
       }
 
+      // Check if user is being newly verified (wasn't verified before)
+      const wasUserVerified = user.userVerified === true;
+      const isNowVerified = userVerified === true;
+      
       await db.collection('users').updateOne(
         { _id: new ObjectId(userId) },
         {
@@ -295,6 +324,27 @@ export async function PATCH(req: NextRequest) {
           }
         }
       );
+
+      // Send verification success email if user just became verified
+      if (!wasUserVerified && isNowVerified) {
+        try {
+          const decryptedEmail = decryptEmail(user.email);
+          
+          // Send email notification asynchronously (don't wait for it)
+          fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/send-verification-success-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: decryptedEmail,
+              fullName: user.fullName,
+              userType: user.userType
+            })
+          }).catch(err => console.error('Failed to send verification email:', err));
+        } catch (emailError) {
+          console.error('Error sending verification email:', emailError);
+          // Don't fail the request if email fails
+        }
+      }
     }
 
     return NextResponse.json({

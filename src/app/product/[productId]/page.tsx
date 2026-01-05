@@ -142,8 +142,31 @@ export default function ProductDetailsPage() {
   const [currentModalImageIndex, setCurrentModalImageIndex] = useState(0);
   const [modalImageLoading, setModalImageLoading] = useState(false);
   const [isFilterSticky, setIsFilterSticky] = useState(false);
+  
+  // User authentication state
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userData, setUserData] = useState<any>(null);
+  const [accessDeniedModal, setAccessDeniedModal] = useState(false);
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState('');
 
   const totalImages = 3; // We generate 3 images per product
+
+  // Check user authentication
+  useEffect(() => {
+    const token = localStorage.getItem('authToken');
+    const userDataStr = localStorage.getItem('userData');
+    
+    if (token && userDataStr) {
+      try {
+        const user = JSON.parse(userDataStr);
+        setIsLoggedIn(true);
+        setUserData(user);
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+        setIsLoggedIn(false);
+      }
+    }
+  }, []);
 
   const nextImage = () => {
     setImageLoading(true);
@@ -153,6 +176,36 @@ export default function ProductDetailsPage() {
   const prevImage = () => {
     setImageLoading(true);
     setCurrentImageIndex((prev) => (prev - 1 + totalImages) % totalImages);
+  };
+
+  // Handle Add Farmer button click with access control
+  const handleAddFarmerClick = () => {
+    // Check if user is logged in
+    if (!isLoggedIn || !userData) {
+      window.location.href = '/login';
+      return;
+    }
+
+    // Check if user is a farmer
+    if (userData.userType !== 'farmer') {
+      setAccessDeniedMessage(
+        'only-farmers'
+      );
+      setAccessDeniedModal(true);
+      return;
+    }
+
+    // Check if user is verified
+    if (!userData.userVerified) {
+      setAccessDeniedMessage(
+        'not-verified'
+      );
+      setAccessDeniedModal(true);
+      return;
+    }
+
+    // All checks passed, proceed to registration
+    window.location.href = '/register-farmer';
   };
 
   // Filter logic
@@ -733,9 +786,7 @@ export default function ProductDetailsPage() {
                   e.currentTarget.style.boxShadow =
                     '0 4px 12px rgba(56, 142, 60, 0.3)';
                 }}
-                onClick={() => {
-                  window.location.href = '/register-farmer';
-                }}
+                onClick={handleAddFarmerClick}
               >
                 👨‍🌾 ADD Farmer
               </button>
@@ -1863,6 +1914,234 @@ export default function ProductDetailsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Access Denied Modal */}
+        {accessDeniedModal && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              background: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 10000,
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() => setAccessDeniedModal(false)}
+          >
+            <div
+              style={{
+                background: 'white',
+                borderRadius: '16px',
+                padding: '2.5rem',
+                maxWidth: '500px',
+                width: '90%',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+                animation: 'modalSlideIn 0.3s ease-out',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <style>{`
+                @keyframes modalSlideIn {
+                  from {
+                    opacity: 0;
+                    transform: scale(0.9) translateY(-20px);
+                  }
+                  to {
+                    opacity: 1;
+                    transform: scale(1) translateY(0);
+                  }
+                }
+              `}</style>
+
+              {/* Icon and Title */}
+              <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚫</div>
+                <h2
+                  style={{
+                    color: '#d32f2f',
+                    fontSize: '1.8rem',
+                    margin: 0,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Access Denied
+                </h2>
+              </div>
+
+              {/* Message Content */}
+              <div
+                style={{
+                  background: '#ffebee',
+                  border: '2px solid #ffcdd2',
+                  borderRadius: '12px',
+                  padding: '1.5rem',
+                  marginBottom: '2rem',
+                }}
+              >
+                {accessDeniedMessage === 'only-farmers' ? (
+                  <>
+                    <p
+                      style={{
+                        color: '#6d4c41',
+                        fontSize: '1rem',
+                        margin: '0 0 1rem 0',
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      This feature is only available for <strong>farmers</strong>.
+                      {userData?.userType && (
+                        <>
+                          {' '}
+                          You are currently registered as a <strong>{userData.userType}</strong>.
+                        </>
+                      )}
+                    </p>
+                    <p
+                      style={{
+                        color: '#6d4c41',
+                        fontSize: '1rem',
+                        margin: 0,
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      Please register as a farmer to add your products and connect with buyers.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p
+                      style={{
+                        color: '#6d4c41',
+                        fontSize: '1rem',
+                        margin: '0 0 1rem 0',
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      Your account verification is <strong>pending</strong> or <strong>incomplete</strong>.
+                    </p>
+                    <p
+                      style={{
+                        color: '#6d4c41',
+                        fontSize: '1rem',
+                        margin: 0,
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      Please complete your document verification to access this feature.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                }}
+              >
+                {accessDeniedMessage === 'only-farmers' ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        window.location.href = '/register';
+                      }}
+                      style={{
+                        background: 'linear-gradient(45deg, #388e3c, #2e7d32)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '1rem 1.5rem',
+                        cursor: 'pointer',
+                        fontSize: '1rem',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        transition: 'all 0.3s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow =
+                          '0 6px 16px rgba(56, 142, 60, 0.4)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
+                      👨‍🌾 Register as Farmer
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        window.location.href = '/verification';
+                      }}
+                      style={{
+                        background: 'linear-gradient(45deg, #388e3c, #2e7d32)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '1rem 1.5rem',
+                        cursor: 'pointer',
+                        fontSize: '1rem',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        transition: 'all 0.3s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow =
+                          '0 6px 16px rgba(56, 142, 60, 0.4)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
+                      📋 Verify Documents
+                    </button>
+                  </>
+                )}
+
+                <button
+                  onClick={() => setAccessDeniedModal(false)}
+                  style={{
+                    background: '#f5f5f5',
+                    color: '#757575',
+                    border: '2px solid #e0e0e0',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#e0e0e0';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#f5f5f5';
+                  }}
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}

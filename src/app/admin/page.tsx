@@ -12,6 +12,7 @@ interface User {
   email: string;
   userType: string;
   farmerId?: string;
+  buyerId?: string;
   emailVerified: boolean;
   userVerified: boolean;
   documentStatus?: string;
@@ -35,7 +36,10 @@ interface VerificationDoc {
   _id: string;
   userId: string;
   farmerId?: string;
+  buyerId?: string;
   kisanId?: string;
+  kisanConsent?: boolean;
+  documentStatus?: string;
   documents: VerificationDocument[];
   submittedAt: string;
   updatedAt: string;
