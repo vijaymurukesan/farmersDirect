@@ -117,6 +117,47 @@ export async function PATCH(req: NextRequest) {
     const client = await clientPromise;
     const db = client.db();
 
+    // Check if this is Kisan ID verification
+    if (documentType === 'kisanId') {
+      // Update Kisan ID verification status
+      const result = await db.collection('verification-docs').updateOne(
+        { userId: new ObjectId(userId) },
+        {
+          $set: {
+            kisanIdVerified: action === 'accept',
+            kisanIdVerifiedBy: adminEmail,
+            kisanIdVerifiedAt: new Date(),
+            documentStatus: action === 'accept' ? 'verified' : 'rejected',
+            updatedAt: new Date()
+          }
+        }
+      );
+
+      if (result.matchedCount === 0) {
+        return NextResponse.json({
+          success: false,
+          message: 'Kisan ID verification record not found'
+        }, { status: 404 });
+      }
+
+      // Update user's verification status
+      await db.collection('users').updateOne(
+        { _id: new ObjectId(userId) },
+        {
+          $set: {
+            documentStatus: action === 'accept' ? 'verified' : 'rejected',
+            userVerified: action === 'accept', // User is verified if Kisan ID is accepted
+            updatedAt: new Date()
+          }
+        }
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: `Kisan ID ${action}ed successfully`
+      });
+    }
+
     // Update the specific document's verification status
     const result = await db.collection('verification-docs').updateOne(
       { 
@@ -147,38 +188,52 @@ export async function PATCH(req: NextRequest) {
     });
 
     if (verificationDoc) {
-      // Define mandatory document types
-      const mandatoryTypes = ['aadhaar', 'aadhaar_card', 'land_registration', 'land_records'];
+      // Define mandatory document types (normalize for comparison)
+      const mandatoryTypes = ['aadhaar', 'aadhaar_card', 'aadhar', 'land_registration', 'land_records'];
+      
+      // Normalize document type for comparison
+      const normalizeDocType = (type: string) => {
+        return type.toLowerCase().trim().replace(/\s+/g, '_');
+      };
       
       // Get all mandatory documents
-      const mandatoryDocs = verificationDoc.documents.filter((doc: any) => 
-        mandatoryTypes.includes(doc.documentType.toLowerCase())
-      );
+      const mandatoryDocs = verificationDoc.documents.filter((doc: any) => {
+        const normalizedType = normalizeDocType(doc.documentType);
+        return mandatoryTypes.includes(normalizedType);
+      });
+
+      // Get all optional documents (non-mandatory)
+      const optionalDocs = verificationDoc.documents.filter((doc: any) => {
+        const normalizedType = normalizeDocType(doc.documentType);
+        return !mandatoryTypes.includes(normalizedType);
+      });
 
       // Check if all mandatory documents are verified
       const allMandatoryVerified = mandatoryDocs.length > 0 && 
         mandatoryDocs.every((doc: any) => doc.verified === true);
       
-      // Check if any document is rejected
-      const anyRejected = verificationDoc.documents.some((doc: any) => doc.status === 'rejected');
+      // Check if any mandatory document is rejected
+      const anyMandatoryRejected = mandatoryDocs.some((doc: any) => doc.status === 'rejected');
       
-      // Check if any document is not verified (verified: false)
-      const anyUnverified = verificationDoc.documents.some((doc: any) => doc.verified === false);
+      // Check if any mandatory document is still pending
+      const anyMandatoryPending = mandatoryDocs.some((doc: any) => 
+        doc.verified === false && doc.status !== 'rejected'
+      );
 
       // Update user's document status and verification status
       let documentStatus = 'pending';
       let userVerified = false;
       
-      if (allMandatoryVerified && !anyUnverified) {
-        // All mandatory docs verified AND no unverified docs exist
+      if (allMandatoryVerified) {
+        // All mandatory docs verified - USER IS VERIFIED (optional docs don't matter)
         documentStatus = 'verified';
         userVerified = true;
-      } else if (anyRejected) {
-        // Any document rejected
+      } else if (anyMandatoryRejected) {
+        // Any mandatory document rejected
         documentStatus = 'rejected';
         userVerified = false;
-      } else if (anyUnverified) {
-        // Any document not verified (pending verification)
+      } else if (anyMandatoryPending) {
+        // Any mandatory document still pending
         documentStatus = 'pending';
         userVerified = false;
       }
