@@ -298,6 +298,9 @@ export default function AdminPage() {
       'aadhar',
       'land_registration',
       'land_records',
+      'company_incorporation',
+      'director_pan',
+      'director_aadhaar',
     ];
 
     // Filter optional documents
@@ -762,11 +765,11 @@ export default function AdminPage() {
                     <thead>
                       <tr>
                         <th>Name</th>
-                        {activeUserTab === 'farmers' && <th>Farmer ID</th>}
+                        <th>ID</th>
                         <th>Email</th>
                         <th>Email Verified</th>
                         <th>User Verified</th>
-                        {activeUserTab === 'farmers' && <th>Documents</th>}
+                        <th>Documents</th>
                         <th>Joined Date</th>
                         {(currentUser?.userType === 'admin' ||
                           currentUser?.userType === 'owner') && (
@@ -783,24 +786,22 @@ export default function AdminPage() {
                           >
                             {user.fullName}
                           </td>
-                          {activeUserTab === 'farmers' && (
-                            <td data-label='Farmer ID'>
-                              {user.farmerId ? (
-                                <code
-                                  style={{
-                                    background: '#e3f2fd',
-                                    padding: '0.25rem 0.5rem',
-                                    borderRadius: '4px',
-                                    fontSize: '0.9rem',
-                                  }}
-                                >
-                                  {user.farmerId}
-                                </code>
-                              ) : (
-                                <span style={{ color: '#999' }}>-</span>
-                              )}
-                            </td>
-                          )}
+                          <td data-label='ID'>
+                            {user.farmerId || user.buyerId ? (
+                              <code
+                                style={{
+                                  background: '#e3f2fd',
+                                  padding: '0.25rem 0.5rem',
+                                  borderRadius: '4px',
+                                  fontSize: '0.9rem',
+                                }}
+                              >
+                                {user.farmerId || user.buyerId}
+                              </code>
+                            ) : (
+                              <span style={{ color: '#999' }}>-</span>
+                            )}
+                          </td>
                           <td data-label='Email'>{decryptEmail(user.email)}</td>
                           <td data-label='Email Verified'>
                             <span
@@ -828,25 +829,23 @@ export default function AdminPage() {
                                 : '✗ Unverified'}
                             </span>
                           </td>
-                          {activeUserTab === 'farmers' && (
-                            <td data-label='Documents'>
-                              <span
-                                className={`status-badge ${
-                                  user.documentStatus === 'verified'
-                                    ? 'status-verified'
-                                    : user.documentStatus === 'pending'
-                                    ? 'status-pending'
-                                    : 'status-unverified'
-                                }`}
-                              >
-                                {user.documentStatus === 'verified'
-                                  ? '✓ Verified'
+                          <td data-label='Documents'>
+                            <span
+                              className={`status-badge ${
+                                user.documentStatus === 'verified'
+                                  ? 'status-verified'
                                   : user.documentStatus === 'pending'
-                                  ? '⏳ Pending'
-                                  : '✗ Not Submitted'}
-                              </span>
-                            </td>
-                          )}
+                                  ? 'status-pending'
+                                  : 'status-unverified'
+                              }`}
+                            >
+                              {user.documentStatus === 'verified'
+                                ? '✓ Verified'
+                                : user.documentStatus === 'pending'
+                                ? '⏳ Pending'
+                                : '✗ Not Submitted'}
+                            </span>
+                          </td>
                           <td
                             data-label='Joined Date'
                             style={{ color: '#6d4c41' }}
@@ -1003,7 +1002,7 @@ export default function AdminPage() {
                             <tr>
                               <th>Name</th>
                               <th>User Type</th>
-                              <th>Farmer ID</th>
+                              <th>ID</th>
                               <th>Email</th>
                               <th>Email Verified</th>
                               <th>User Verified</th>
@@ -1075,8 +1074,8 @@ export default function AdminPage() {
                                           : '🛒 Buyer'}
                                       </span>
                                     </td>
-                                    <td data-label='Farmer ID'>
-                                      {user.farmerId ? (
+                                    <td data-label='ID'>
+                                      {user.farmerId || user.buyerId ? (
                                         <code
                                           style={{
                                             background: '#e3f2fd',
@@ -1085,7 +1084,7 @@ export default function AdminPage() {
                                             fontSize: '0.9rem',
                                           }}
                                         >
-                                          {user.farmerId}
+                                          {user.farmerId || user.buyerId}
                                         </code>
                                       ) : (
                                         <span style={{ color: '#999' }}>-</span>
@@ -1138,6 +1137,9 @@ export default function AdminPage() {
                                           'aadhar',
                                           'land_registration',
                                           'land_records',
+                                          'company_incorporation',
+                                          'director_pan',
+                                          'director_aadhaar',
                                         ];
 
                                         // Check for Kisan ID verification
@@ -1375,6 +1377,9 @@ export default function AdminPage() {
                                                   'aadhar',
                                                   'land_registration',
                                                   'land_records',
+                                                  'company_incorporation',
+                                                  'director_pan',
+                                                  'director_aadhaar',
                                                 ];
 
                                                 const mandatoryDocs =
@@ -2542,7 +2547,7 @@ export default function AdminPage() {
                             <tr>
                               <th>Name</th>
                               <th>User Type</th>
-                              <th>Farmer ID</th>
+                              <th>ID</th>
                               <th>Email</th>
                               <th>Verification Status</th>
                               <th>Optional Docs Pending</th>
@@ -2568,6 +2573,9 @@ export default function AdminPage() {
                                 'aadhar',
                                 'land_registration',
                                 'land_records',
+                                'company_incorporation',
+                                'director_pan',
+                                'director_aadhaar',
                               ];
                               const optionalDocs =
                                 userDocs?.documents.filter((doc) => {
@@ -2641,8 +2649,8 @@ export default function AdminPage() {
                                           : '🛒 Buyer'}
                                       </span>
                                     </td>
-                                    <td data-label='Farmer ID'>
-                                      {user.farmerId ? (
+                                    <td data-label='ID'>
+                                      {user.farmerId || user.buyerId ? (
                                         <code
                                           style={{
                                             background: '#e3f2fd',
@@ -2651,7 +2659,7 @@ export default function AdminPage() {
                                             fontSize: '0.9rem',
                                           }}
                                         >
-                                          {user.farmerId}
+                                          {user.farmerId || user.buyerId}
                                         </code>
                                       ) : (
                                         <span style={{ color: '#999' }}>-</span>
@@ -2767,6 +2775,9 @@ export default function AdminPage() {
                                                   'aadhar',
                                                   'land_registration',
                                                   'land_records',
+                                                  'company_incorporation',
+                                                  'director_pan',
+                                                  'director_aadhaar',
                                                 ];
 
                                                 const mandatoryDocs =

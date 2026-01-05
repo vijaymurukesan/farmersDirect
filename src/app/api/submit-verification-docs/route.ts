@@ -29,11 +29,12 @@ export async function POST(req: NextRequest) {
       }, { status: 401 });
     }
 
-    const { documents, kisanId, farmerId, verificationMethod, consent, isOptional } = await req.json();
+    const { documents, kisanId, farmerId, buyerId, verificationMethod, consent, isOptional } = await req.json();
 
     console.log('Received documents:', JSON.stringify(documents, null, 2));
     console.log('Received kisanId:', kisanId);
     console.log('Received farmerId:', farmerId);
+    console.log('Received buyerId:', buyerId);
     console.log('Verification method:', verificationMethod);
     console.log('Consent:', consent);
     console.log('isOptional:', isOptional);
@@ -67,7 +68,8 @@ export async function POST(req: NextRequest) {
               kisanConsent: consent,
               documentStatus: 'pending', // Add status tracking
               updatedAt: new Date(),
-              ...(farmerId && { farmerId })
+              ...(farmerId && { farmerId }),
+              ...(buyerId && { buyerId })
             }
           }
         );
@@ -86,6 +88,10 @@ export async function POST(req: NextRequest) {
         
         if (farmerId) {
           newVerificationDoc.farmerId = farmerId;
+        }
+        
+        if (buyerId) {
+          newVerificationDoc.buyerId = buyerId;
         }
         
         result = await db.collection('verification-docs').insertOne(newVerificationDoc);
@@ -176,6 +182,7 @@ export async function POST(req: NextRequest) {
         $set: { 
           updatedAt: new Date(),
           ...(farmerId && { farmerId }), // Update farmerId if provided
+          ...(buyerId && { buyerId }), // Update buyerId if provided
           ...(kisanId && { kisanId }) // Update kisanId if provided
         }
       };
@@ -221,6 +228,10 @@ export async function POST(req: NextRequest) {
       
       if (farmerId) {
         newVerificationDoc.farmerId = farmerId;
+      }
+      
+      if (buyerId) {
+        newVerificationDoc.buyerId = buyerId;
       }
       
       if (kisanId) {

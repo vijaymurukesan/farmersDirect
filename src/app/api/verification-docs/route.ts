@@ -188,8 +188,38 @@ export async function PATCH(req: NextRequest) {
     });
 
     if (verificationDoc) {
-      // Define mandatory document types (normalize for comparison)
-      const mandatoryTypes = ['aadhaar', 'aadhaar_card', 'aadhar', 'land_registration', 'land_records'];
+      // Get user to determine user type
+      const user = await db.collection('users').findOne({
+        _id: new ObjectId(userId)
+      });
+
+      if (!user) {
+        return NextResponse.json({
+          success: false,
+          message: 'User not found'
+        }, { status: 404 });
+      }
+
+      // Define mandatory document types based on user type
+      let mandatoryTypes: string[] = [];
+      
+      if (user.userType === 'farmer') {
+        // Farmer mandatory documents
+        mandatoryTypes = [
+          'aadhaar', 
+          'aadhaar_card', 
+          'aadhar', 
+          'land_registration', 
+          'land_records'
+        ];
+      } else if (user.userType === 'buyer') {
+        // Buyer mandatory documents
+        mandatoryTypes = [
+          'company_incorporation',
+          'director_pan',
+          'director_aadhaar'
+        ];
+      }
       
       // Normalize document type for comparison
       const normalizeDocType = (type: string) => {
@@ -212,6 +242,9 @@ export async function PATCH(req: NextRequest) {
       const allMandatoryVerified = mandatoryDocs.length > 0 && 
         mandatoryDocs.every((doc: any) => doc.verified === true);
       
+      // Check if Kisan ID is verified (only applicable for farmers)
+      const kisanIdVerified = user.userType === 'farmer' && verificationDoc.kisanIdVerified === true;
+      
       // Check if any mandatory document is rejected
       const anyMandatoryRejected = mandatoryDocs.some((doc: any) => doc.status === 'rejected');
       
@@ -224,18 +257,32 @@ export async function PATCH(req: NextRequest) {
       let documentStatus = 'pending';
       let userVerified = false;
       
-      if (allMandatoryVerified) {
-        // All mandatory docs verified - USER IS VERIFIED (optional docs don't matter)
-        documentStatus = 'verified';
-        userVerified = true;
-      } else if (anyMandatoryRejected) {
-        // Any mandatory document rejected
-        documentStatus = 'rejected';
-        userVerified = false;
-      } else if (anyMandatoryPending) {
-        // Any mandatory document still pending
-        documentStatus = 'pending';
-        userVerified = false;
+      // For farmers: User is verified if EITHER Kisan ID is verified OR all mandatory documents are verified
+      // For buyers: User is verified if all mandatory documents are verified
+      if (user.userType === 'farmer') {
+        // Farmer verification: Kisan ID OR mandatory documents
+        if (kisanIdVerified || allMandatoryVerified) {
+          documentStatus = 'verified';
+          userVerified = true;
+        } else if (anyMandatoryRejected) {
+          documentStatus = 'rejected';
+          userVerified = false;
+        } else if (anyMandatoryPending) {
+          documentStatus = 'pending';
+          userVerified = false;
+        }
+      } else if (user.userType === 'buyer') {
+        // Buyer verification: Only mandatory documents
+        if (allMandatoryVerified) {
+          documentStatus = 'verified';
+          userVerified = true;
+        } else if (anyMandatoryRejected) {
+          documentStatus = 'rejected';
+          userVerified = false;
+        } else if (anyMandatoryPending) {
+          documentStatus = 'pending';
+          userVerified = false;
+        }
       }
 
       await db.collection('users').updateOne(

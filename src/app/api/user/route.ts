@@ -66,6 +66,27 @@ export async function POST(req: NextRequest) {
       }
     }
     
+    // Generate unique buyer ID if user is a buyer
+    let buyerId = null;
+    if (userData.userType === 'buyer') {
+      // Get the latest buyer to determine the next ID
+      const latestBuyer = await db.collection('users')
+        .find({ userType: 'buyer', buyerId: { $exists: true } })
+        .sort({ buyerId: -1 })
+        .limit(1)
+        .toArray();
+      
+      if (latestBuyer.length > 0 && latestBuyer[0].buyerId) {
+        // Extract the number from the latest buyer ID (e.g., "BID001" -> 1)
+        const latestNumber = parseInt(latestBuyer[0].buyerId.replace('BID', ''));
+        const nextNumber = latestNumber + 1;
+        buyerId = `BID${String(nextNumber).padStart(3, '0')}`;
+      } else {
+        // First buyer
+        buyerId = 'BID001';
+      }
+    }
+    
     // Create user record
     const userRecord: Record<string, any> = {
       fullName: userData.fullName,
@@ -90,6 +111,21 @@ export async function POST(req: NextRequest) {
       }
     }
     
+    // Add buyerId and buyer-specific fields if user is a buyer
+    if (buyerId) {
+      userRecord.buyerId = buyerId;
+      // Add buyer-specific fields if provided
+      if (userData.companyName) {
+        userRecord.companyName = userData.companyName;
+      }
+      if (userData.cin) {
+        userRecord.cin = userData.cin;
+      }
+      if (userData.gstin) {
+        userRecord.gstin = userData.gstin;
+      }
+    }
+    
     // Insert the user into MongoDB
     const result = await db.collection('users').insertOne(userRecord);
     
@@ -100,7 +136,8 @@ export async function POST(req: NextRequest) {
           userId: result.insertedId.toString(),
           email: userData.email, // Use plain email in token
           userType: userData.userType,
-          ...(farmerId && { farmerId: farmerId }) // Include farmerId in token if exists
+          ...(farmerId && { farmerId: farmerId }), // Include farmerId in token if exists
+          ...(buyerId && { buyerId: buyerId }) // Include buyerId in token if exists
         },
         JWT_SECRET,
         { expiresIn: '7d' } // Token expires in 7 days
@@ -120,10 +157,17 @@ export async function POST(req: NextRequest) {
         responseData.farmerId = farmerId;
       }
       
+      // Add buyerId to response if exists
+      if (buyerId) {
+        responseData.buyerId = buyerId;
+      }
+      
       return NextResponse.json({
         success: true,
         message: farmerId 
           ? `Farmer registered successfully! Your Farmer ID is ${farmerId}` 
+          : buyerId
+          ? `Buyer registered successfully! Your Buyer ID is ${buyerId}`
           : 'User registered successfully',
         userId: result.insertedId,
         token: token,

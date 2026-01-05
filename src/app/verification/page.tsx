@@ -32,6 +32,16 @@ export default function VerificationPage() {
   const [otherFarmingDocFile, setOtherFarmingDocFile] = useState<File | null>(
     null
   );
+  // Buyer-specific documents
+  const [companyIncorporationFile, setCompanyIncorporationFile] =
+    useState<File | null>(null);
+  const [directorPanFile, setDirectorPanFile] = useState<File | null>(null);
+  const [directorAadhaarFile, setDirectorAadhaarFile] = useState<File | null>(
+    null
+  );
+  const [gstinCertificateFile, setGstinCertificateFile] = useState<File | null>(
+    null
+  );
   const [kisanId, setKisanId] = useState('');
   const [verificationMethod, setVerificationMethod] = useState<
     'documents' | 'kisan'
@@ -48,6 +58,7 @@ export default function VerificationPage() {
     fpoMembership: 'none' | 'pending' | 'verified' | 'rejected';
     soilHealthCard: 'none' | 'pending' | 'verified' | 'rejected';
     otherFarmingDoc: 'none' | 'pending' | 'verified' | 'rejected';
+    gstinCertificate: 'none' | 'pending' | 'verified' | 'rejected';
   }>({
     kisanId: 'none',
     organicLicense: 'none',
@@ -56,6 +67,7 @@ export default function VerificationPage() {
     fpoMembership: 'none',
     soilHealthCard: 'none',
     otherFarmingDoc: 'none',
+    gstinCertificate: 'none',
   });
 
   const [uploadingOptionalDoc, setUploadingOptionalDoc] = useState<
@@ -450,6 +462,67 @@ export default function VerificationPage() {
     }
   };
 
+  // Buyer document handlers
+  const handleCompanyIncorporationFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const fileType = file.type;
+      if (fileType.startsWith('image/') || fileType === 'application/pdf') {
+        setCompanyIncorporationFile(file);
+      } else {
+        showSnackbar('Please select an image or PDF file', 'error');
+        e.target.value = '';
+      }
+    }
+  };
+
+  const handleDirectorPanFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const fileType = file.type;
+      if (fileType.startsWith('image/') || fileType === 'application/pdf') {
+        setDirectorPanFile(file);
+      } else {
+        showSnackbar('Please select an image or PDF file', 'error');
+        e.target.value = '';
+      }
+    }
+  };
+
+  const handleDirectorAadhaarFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const fileType = file.type;
+      if (fileType.startsWith('image/') || fileType === 'application/pdf') {
+        setDirectorAadhaarFile(file);
+      } else {
+        showSnackbar('Please select an image or PDF file', 'error');
+        e.target.value = '';
+      }
+    }
+  };
+
+  const handleGstinCertificateFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const fileType = file.type;
+      if (fileType.startsWith('image/') || fileType === 'application/pdf') {
+        setGstinCertificateFile(file);
+      } else {
+        showSnackbar('Please select an image or PDF file', 'error');
+        e.target.value = '';
+      }
+    }
+  };
+
   // Handler for mandatory document submission (Section 2 only)
   const handleMandatoryDocumentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -516,26 +589,47 @@ export default function VerificationPage() {
       return;
     }
 
-    // Regular document upload validation for mandatory documents only
-    if (!aadhaarFile) {
-      showSnackbar('Please upload Aadhaar card (mandatory)', 'error');
-      return;
+    // Regular document upload validation for mandatory documents
+    if (userData.userType === 'farmer') {
+      if (!aadhaarFile) {
+        showSnackbar('Please upload Aadhaar card (mandatory)', 'error');
+        return;
+      }
+
+      // For farmers using document verification, validate land documents
+      if (verificationMethod === 'documents') {
+        if (!landRegistrationFile) {
+          showSnackbar(
+            'Please upload Land Registration Document (mandatory)',
+            'error'
+          );
+          return;
+        }
+        if (!landRecordsFile) {
+          showSnackbar(
+            'Please upload Land Records document (mandatory)',
+            'error'
+          );
+          return;
+        }
+      }
     }
 
-    // For farmers using document verification, validate land documents
-    if (userData.userType === 'farmer' && verificationMethod === 'documents') {
-      if (!landRegistrationFile) {
+    // For buyers, validate buyer-specific mandatory documents
+    if (userData.userType === 'buyer') {
+      if (!companyIncorporationFile) {
         showSnackbar(
-          'Please upload Land Registration Document (mandatory)',
+          'Please upload Company Incorporation Certificate (mandatory)',
           'error'
         );
         return;
       }
-      if (!landRecordsFile) {
-        showSnackbar(
-          'Please upload Land Records document (mandatory)',
-          'error'
-        );
+      if (!directorPanFile) {
+        showSnackbar('Please upload Director PAN (mandatory)', 'error');
+        return;
+      }
+      if (!directorAadhaarFile) {
+        showSnackbar('Please upload Director Aadhaar (mandatory)', 'error');
         return;
       }
     }
@@ -573,18 +667,19 @@ export default function VerificationPage() {
 
       const documents = [];
 
-      // Upload Aadhaar (mandatory)
-      const aadhaarUpload = await uploadFile(aadhaarFile, 'aadhaar');
-      documents.push({
-        documentType: 'aadhaar',
-        fileName: aadhaarUpload.data.fileName,
-        fileUrl: aadhaarUpload.data.url,
-        fileSize: aadhaarUpload.data.fileSize,
-        fileType: aadhaarUpload.data.fileType,
-      });
-
-      // Upload land documents for farmers (mandatory)
+      // Upload documents based on user type
       if (userData.userType === 'farmer') {
+        // Upload Aadhaar (mandatory for farmers)
+        const aadhaarUpload = await uploadFile(aadhaarFile, 'aadhaar');
+        documents.push({
+          documentType: 'aadhaar',
+          fileName: aadhaarUpload.data.fileName,
+          fileUrl: aadhaarUpload.data.url,
+          fileSize: aadhaarUpload.data.fileSize,
+          fileType: aadhaarUpload.data.fileType,
+        });
+
+        // Upload land documents for farmers (mandatory)
         if (landRegistrationFile) {
           const landRegUpload = await uploadFile(
             landRegistrationFile,
@@ -611,6 +706,47 @@ export default function VerificationPage() {
             fileType: landRecUpload.data.fileType,
           });
         }
+      } else if (userData.userType === 'buyer') {
+        // Upload buyer mandatory documents
+        if (companyIncorporationFile) {
+          const companyIncUpload = await uploadFile(
+            companyIncorporationFile,
+            'company_incorporation'
+          );
+          documents.push({
+            documentType: 'company_incorporation',
+            fileName: companyIncUpload.data.fileName,
+            fileUrl: companyIncUpload.data.url,
+            fileSize: companyIncUpload.data.fileSize,
+            fileType: companyIncUpload.data.fileType,
+          });
+        }
+        if (directorPanFile) {
+          const directorPanUpload = await uploadFile(
+            directorPanFile,
+            'director_pan'
+          );
+          documents.push({
+            documentType: 'director_pan',
+            fileName: directorPanUpload.data.fileName,
+            fileUrl: directorPanUpload.data.url,
+            fileSize: directorPanUpload.data.fileSize,
+            fileType: directorPanUpload.data.fileType,
+          });
+        }
+        if (directorAadhaarFile) {
+          const directorAadhaarUpload = await uploadFile(
+            directorAadhaarFile,
+            'director_aadhaar'
+          );
+          documents.push({
+            documentType: 'director_aadhaar',
+            fileName: directorAadhaarUpload.data.fileName,
+            fileUrl: directorAadhaarUpload.data.url,
+            fileSize: directorAadhaarUpload.data.fileSize,
+            fileType: directorAadhaarUpload.data.fileType,
+          });
+        }
       }
 
       showSnackbar('Saving mandatory document information...', 'info');
@@ -625,6 +761,7 @@ export default function VerificationPage() {
         body: JSON.stringify({
           documents,
           farmerId: userData.farmerId || null,
+          buyerId: userData.buyerId || null,
           verificationMethod: 'documents',
         }),
       });
@@ -646,8 +783,13 @@ export default function VerificationPage() {
           'Mandatory documents submitted successfully! Pending admin verification. 📄',
           'success'
         );
+        // Clear farmer documents
         setAadhaarFile(null);
         setLandRegistrationFile(null);
+        // Clear buyer documents
+        setCompanyIncorporationFile(null);
+        setDirectorPanFile(null);
+        setDirectorAadhaarFile(null);
         setLandRecordsFile(null);
       } else {
         showSnackbar(result.message || 'Failed to submit documents', 'error');
@@ -672,7 +814,8 @@ export default function VerificationPage() {
       | 'cropInsurance'
       | 'fpoMembership'
       | 'soilHealthCard'
-      | 'otherFarmingDoc',
+      | 'otherFarmingDoc'
+      | 'gstinCertificate',
     file: File | null,
     additionalData?: any
   ) => {
@@ -765,6 +908,7 @@ export default function VerificationPage() {
           body: JSON.stringify({
             documents,
             farmerId: userData.farmerId || null,
+            buyerId: userData.buyerId || null,
             isOptional: true,
           }),
         });
@@ -794,6 +938,9 @@ export default function VerificationPage() {
               break;
             case 'otherFarmingDoc':
               setOtherFarmingDocFile(null);
+              break;
+            case 'gstinCertificate':
+              setGstinCertificateFile(null);
               break;
           }
         } else {
@@ -1456,7 +1603,9 @@ export default function VerificationPage() {
                           fontWeight: 'bold',
                         }}
                       >
-                        {userData.userType === 'farmer' ? '3 Required' : '1 Required'}
+                        {userData.userType === 'farmer'
+                          ? '3 Required'
+                          : '3 Required'}
                       </span>
                     </div>
                     <p
@@ -1468,98 +1617,375 @@ export default function VerificationPage() {
                     >
                       {userData.userType === 'farmer'
                         ? 'All three documents are required for farmer verification.'
-                        : 'Aadhaar card is required for buyer verification.'}
+                        : 'All three documents are required for buyer verification.'}
                     </p>
                   </div>
 
-                  {/* Aadhaar Card Upload - Mandatory */}
-                  <div
-                    className='form-group'
-                    style={{
-                      background: '#fff3e0',
-                      padding: '1.5rem',
-                      borderRadius: '8px',
-                      border: '2px solid #ff9800',
-                      marginBottom: '2rem',
-                    }}
-                  >
-                    <label
-                      className='form-label'
+                  {/* Farmer Aadhaar Card Upload - Mandatory for Farmers */}
+                  {userData.userType === 'farmer' && (
+                    <div
+                      className='form-group'
                       style={{
-                        fontSize: '1.1rem',
-                        color: '#e65100',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        marginBottom: '1rem',
+                        background: '#fff3e0',
+                        padding: '1.5rem',
+                        borderRadius: '8px',
+                        border: '2px solid #ff9800',
+                        marginBottom: '2rem',
                       }}
                     >
-                      🆔 Aadhaar Card{' '}
-                      <span
+                      <label
+                        className='form-label'
                         style={{
-                          background: '#d32f2f',
-                          color: 'white',
-                          padding: '0.25rem 0.5rem',
-                          borderRadius: '4px',
-                          fontSize: '0.7rem',
-                          fontWeight: 'bold',
+                          fontSize: '1.1rem',
+                          color: '#e65100',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          marginBottom: '1rem',
                         }}
                       >
-                        MANDATORY
-                      </span>
-                    </label>
-                    <p
-                      style={{
-                        color: '#6d4c41',
-                        fontSize: '0.9rem',
-                        marginBottom: '1rem',
-                        fontStyle: 'italic',
-                      }}
-                    >
-                      Upload a clear copy of your Aadhaar card (front and back).
-                      Accepted formats: JPG, PNG, PDF
-                    </p>
-                    <input
-                      type='file'
-                      id='aadhaar-upload'
-                      className='file-input'
-                      accept='image/*,.pdf'
-                      onChange={handleAadhaarFileChange}
-                      required
-                    />
-                    <label
-                      htmlFor='aadhaar-upload'
-                      className='file-label'
-                      style={{
-                        background: '#ff9800',
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.background = '#f57c00';
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.background = '#ff9800';
-                      }}
-                    >
-                      📎 Choose Aadhaar File
-                    </label>
-                    {aadhaarFile && (
+                        🆔 Aadhaar Card{' '}
+                        <span
+                          style={{
+                            background: '#d32f2f',
+                            color: 'white',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: '4px',
+                            fontSize: '0.7rem',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          MANDATORY
+                        </span>
+                      </label>
+                      <p
+                        style={{
+                          color: '#6d4c41',
+                          fontSize: '0.9rem',
+                          marginBottom: '1rem',
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        Upload a clear copy of your Aadhaar card (front and
+                        back). Accepted formats: JPG, PNG, PDF
+                      </p>
+                      <input
+                        type='file'
+                        id='aadhaar-upload'
+                        className='file-input'
+                        accept='image/*,.pdf'
+                        onChange={handleAadhaarFileChange}
+                        required
+                      />
+                      <label
+                        htmlFor='aadhaar-upload'
+                        className='file-label'
+                        style={{
+                          background: '#ff9800',
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = '#f57c00';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = '#ff9800';
+                        }}
+                      >
+                        📎 Choose Aadhaar File
+                      </label>
+                      {aadhaarFile && (
+                        <div
+                          className='file-info'
+                          style={{
+                            color: '#2e7d32',
+                            fontWeight: 'bold',
+                            marginTop: '0.75rem',
+                            background: '#e8f5e9',
+                            padding: '0.75rem',
+                            borderRadius: '4px',
+                            border: '1px solid #c8e6c9',
+                          }}
+                        >
+                          ✅ Selected: {aadhaarFile.name} (
+                          {(aadhaarFile.size / 1024).toFixed(2)} KB)
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Buyer Mandatory Documents */}
+                  {userData.userType === 'buyer' && (
+                    <>
+                      {/* Company Incorporation Certificate - Mandatory for Buyers */}
                       <div
-                        className='file-info'
+                        className='form-group'
                         style={{
-                          color: '#2e7d32',
-                          fontWeight: 'bold',
-                          marginTop: '0.75rem',
-                          background: '#e8f5e9',
-                          padding: '0.75rem',
-                          borderRadius: '4px',
-                          border: '1px solid #c8e6c9',
+                          background: '#fff3e0',
+                          padding: '1.5rem',
+                          borderRadius: '8px',
+                          border: '2px solid #ff9800',
+                          marginBottom: '2rem',
                         }}
                       >
-                        ✅ Selected: {aadhaarFile.name} (
-                        {(aadhaarFile.size / 1024).toFixed(2)} KB)
+                        <label
+                          className='form-label'
+                          style={{
+                            fontSize: '1.1rem',
+                            color: '#e65100',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            marginBottom: '1rem',
+                          }}
+                        >
+                          🏢 Company Incorporation Certificate{' '}
+                          <span
+                            style={{
+                              background: '#d32f2f',
+                              color: 'white',
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              fontWeight: 'bold',
+                            }}
+                          >
+                            MANDATORY
+                          </span>
+                        </label>
+                        <p
+                          style={{
+                            color: '#6d4c41',
+                            fontSize: '0.9rem',
+                            marginBottom: '1rem',
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          Upload your Company Incorporation Certificate issued
+                          by ROC (Registrar of Companies). Accepted formats:
+                          JPG, PNG, PDF
+                        </p>
+                        <input
+                          type='file'
+                          id='company-incorporation-upload'
+                          className='file-input'
+                          accept='image/*,.pdf'
+                          onChange={handleCompanyIncorporationFileChange}
+                          required
+                        />
+                        <label
+                          htmlFor='company-incorporation-upload'
+                          className='file-label'
+                          style={{
+                            background: '#ff9800',
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = '#f57c00';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = '#ff9800';
+                          }}
+                        >
+                          📎 Choose Company Incorporation Certificate
+                        </label>
+                        {companyIncorporationFile && (
+                          <div
+                            className='file-info'
+                            style={{
+                              color: '#2e7d32',
+                              fontWeight: 'bold',
+                              marginTop: '0.75rem',
+                              background: '#e8f5e9',
+                              padding: '0.75rem',
+                              borderRadius: '4px',
+                              border: '1px solid #c8e6c9',
+                            }}
+                          >
+                            ✅ Selected: {companyIncorporationFile.name} (
+                            {(companyIncorporationFile.size / 1024).toFixed(2)}{' '}
+                            KB)
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+
+                      {/* Director PAN - Mandatory for Buyers */}
+                      <div
+                        className='form-group'
+                        style={{
+                          background: '#fff3e0',
+                          padding: '1.5rem',
+                          borderRadius: '8px',
+                          border: '2px solid #ff6f00',
+                          marginBottom: '2rem',
+                        }}
+                      >
+                        <label
+                          className='form-label'
+                          style={{
+                            fontSize: '1.1rem',
+                            color: '#e65100',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            marginBottom: '1rem',
+                          }}
+                        >
+                          💳 Director PAN Card{' '}
+                          <span
+                            style={{
+                              background: '#d32f2f',
+                              color: 'white',
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              fontWeight: 'bold',
+                            }}
+                          >
+                            MANDATORY
+                          </span>
+                        </label>
+                        <p
+                          style={{
+                            color: '#6d4c41',
+                            fontSize: '0.9rem',
+                            marginBottom: '1rem',
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          Upload the PAN card of the company director or
+                          authorized signatory. Accepted formats: JPG, PNG, PDF
+                        </p>
+                        <input
+                          type='file'
+                          id='director-pan-upload'
+                          className='file-input'
+                          accept='image/*,.pdf'
+                          onChange={handleDirectorPanFileChange}
+                          required
+                        />
+                        <label
+                          htmlFor='director-pan-upload'
+                          className='file-label'
+                          style={{
+                            background: '#ff6f00',
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = '#e65100';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = '#ff6f00';
+                          }}
+                        >
+                          📎 Choose Director PAN Card
+                        </label>
+                        {directorPanFile && (
+                          <div
+                            className='file-info'
+                            style={{
+                              color: '#2e7d32',
+                              fontWeight: 'bold',
+                              marginTop: '0.75rem',
+                              background: '#ffe0b2',
+                              padding: '0.75rem',
+                              borderRadius: '4px',
+                              border: '1px solid #ff6f00',
+                            }}
+                          >
+                            ✅ Selected: {directorPanFile.name} (
+                            {(directorPanFile.size / 1024).toFixed(2)} KB)
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Director Aadhaar - Mandatory for Buyers */}
+                      <div
+                        className='form-group'
+                        style={{
+                          background: '#fff3e0',
+                          padding: '1.5rem',
+                          borderRadius: '8px',
+                          border: '2px solid #ff6f00',
+                          marginBottom: '2rem',
+                        }}
+                      >
+                        <label
+                          className='form-label'
+                          style={{
+                            fontSize: '1.1rem',
+                            color: '#e65100',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            marginBottom: '1rem',
+                          }}
+                        >
+                          🆔 Director Aadhaar Card{' '}
+                          <span
+                            style={{
+                              background: '#d32f2f',
+                              color: 'white',
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              fontWeight: 'bold',
+                            }}
+                          >
+                            MANDATORY
+                          </span>
+                        </label>
+                        <p
+                          style={{
+                            color: '#6d4c41',
+                            fontSize: '0.9rem',
+                            marginBottom: '1rem',
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          Upload the Aadhaar card of the company director or
+                          authorized signatory (front and back). Accepted
+                          formats: JPG, PNG, PDF
+                        </p>
+                        <input
+                          type='file'
+                          id='director-aadhaar-upload'
+                          className='file-input'
+                          accept='image/*,.pdf'
+                          onChange={handleDirectorAadhaarFileChange}
+                          required
+                        />
+                        <label
+                          htmlFor='director-aadhaar-upload'
+                          className='file-label'
+                          style={{
+                            background: '#ff6f00',
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = '#e65100';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = '#ff6f00';
+                          }}
+                        >
+                          📎 Choose Director Aadhaar Card
+                        </label>
+                        {directorAadhaarFile && (
+                          <div
+                            className='file-info'
+                            style={{
+                              color: '#2e7d32',
+                              fontWeight: 'bold',
+                              marginTop: '0.75rem',
+                              background: '#ffe0b2',
+                              padding: '0.75rem',
+                              borderRadius: '4px',
+                              border: '1px solid #ff6f00',
+                            }}
+                          >
+                            ✅ Selected: {directorAadhaarFile.name} (
+                            {(directorAadhaarFile.size / 1024).toFixed(2)} KB)
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
 
                   {/* Land Registration Document - Mandatory (Only for Farmers) */}
                   {userData.userType === 'farmer' && (
@@ -1811,10 +2237,13 @@ export default function VerificationPage() {
                   (userData.userType === 'farmer' &&
                   verificationMethod === 'kisan'
                     ? !kisanId || !kisanConsent
-                    : !aadhaarFile ||
-                      (userData.userType === 'farmer' &&
-                        verificationMethod === 'documents' &&
-                        (!landRegistrationFile || !landRecordsFile)))
+                    : userData.userType === 'farmer'
+                    ? !aadhaarFile ||
+                      (verificationMethod === 'documents' &&
+                        (!landRegistrationFile || !landRecordsFile))
+                    : !companyIncorporationFile ||
+                      !directorPanFile ||
+                      !directorAadhaarFile)
                 }
                 style={{
                   opacity:
@@ -1822,10 +2251,13 @@ export default function VerificationPage() {
                     (userData.userType === 'farmer' &&
                     verificationMethod === 'kisan'
                       ? !kisanId || !kisanConsent
-                      : !aadhaarFile ||
-                        (userData.userType === 'farmer' &&
-                          verificationMethod === 'documents' &&
-                          (!landRegistrationFile || !landRecordsFile)))
+                      : userData.userType === 'farmer'
+                      ? !aadhaarFile ||
+                        (verificationMethod === 'documents' &&
+                          (!landRegistrationFile || !landRecordsFile))
+                      : !companyIncorporationFile ||
+                        !directorPanFile ||
+                        !directorAadhaarFile)
                       ? 0.6
                       : 1,
                 }}
@@ -1867,9 +2299,9 @@ export default function VerificationPage() {
                       continue
                     </p>
                   )
-                : (!aadhaarFile ||
-                    (userData.userType === 'farmer' &&
-                      verificationMethod === 'documents' &&
+                : userData.userType === 'farmer'
+                ? (!aadhaarFile ||
+                    (verificationMethod === 'documents' &&
                       (!landRegistrationFile || !landRecordsFile))) && (
                     <p
                       style={{
@@ -1881,19 +2313,35 @@ export default function VerificationPage() {
                     >
                       * {!aadhaarFile && 'Aadhaar card is required'}
                       {!aadhaarFile &&
-                        userData.userType === 'farmer' &&
                         (!landRegistrationFile || !landRecordsFile) &&
                         ', '}
-                      {userData.userType === 'farmer' &&
-                        !landRegistrationFile &&
+                      {!landRegistrationFile &&
                         'Land Registration Document is required'}
-                      {userData.userType === 'farmer' &&
-                        !landRegistrationFile &&
-                        !landRecordsFile &&
+                      {!landRegistrationFile && !landRecordsFile && ', '}
+                      {!landRecordsFile && 'Land Records document is required'}
+                    </p>
+                  )
+                : (!companyIncorporationFile ||
+                    !directorPanFile ||
+                    !directorAadhaarFile) && (
+                    <p
+                      style={{
+                        color: '#d32f2f',
+                        fontSize: '0.85rem',
+                        marginTop: '0.75rem',
+                        fontStyle: 'italic',
+                      }}
+                    >
+                      *{' '}
+                      {!companyIncorporationFile &&
+                        'Company Incorporation Certificate is required'}
+                      {!companyIncorporationFile &&
+                        (!directorPanFile || !directorAadhaarFile) &&
                         ', '}
-                      {userData.userType === 'farmer' &&
-                        !landRecordsFile &&
-                        'Land Records document is required'}
+                      {!directorPanFile && 'Director PAN Card is required'}
+                      {!directorPanFile && !directorAadhaarFile && ', '}
+                      {!directorAadhaarFile &&
+                        'Director Aadhaar Card is required'}
                     </p>
                   )}
             </form>
@@ -1901,7 +2349,7 @@ export default function VerificationPage() {
         </div>
 
         {/* Step 3: Optional Documents (Recommended to highlight your profile) */}
-        {emailVerified && !documentVerified && (
+        {emailVerified && !documentVerified && documentPending && (
           <div className='step-card'>
             <div className='step-header'>
               <div className='step-number'>3</div>
@@ -1923,9 +2371,211 @@ export default function VerificationPage() {
                   These documents are optional but highly recommended.
                 </strong>{' '}
                 They help enhance your profile credibility, improve trust with
-                buyers, and can lead to better pricing and more business
-                opportunities.
+                {userData.userType === 'farmer' ? ' buyers' : ' farmers'}, and
+                can lead to better pricing and more business opportunities.
               </p>
+
+              {/* GSTIN Certificate for Buyers - Optional */}
+              {userData.userType === 'buyer' && (
+                <>
+                  {(optionalDocStatuses.gstinCertificate === 'none' ||
+                    optionalDocStatuses.gstinCertificate === 'rejected') && (
+                    <div
+                      className='form-group'
+                      style={{
+                        background: '#e8f5e9',
+                        padding: '1.5rem',
+                        borderRadius: '8px',
+                        border: '2px solid #c8e6c9',
+                        marginBottom: '2rem',
+                        marginTop: '0',
+                      }}
+                    >
+                      {/* Rejection Warning */}
+                      {optionalDocStatuses.gstinCertificate === 'rejected' && (
+                        <div
+                          style={{
+                            background: '#ffebee',
+                            border: '2px solid #f44336',
+                            borderRadius: '8px',
+                            padding: '1rem',
+                            marginBottom: '1rem',
+                          }}
+                        >
+                          <p
+                            style={{
+                              color: '#c62828',
+                              fontWeight: 'bold',
+                              margin: 0,
+                              fontSize: '0.95rem',
+                            }}
+                          >
+                            ❌ Previous document was rejected. Please upload a
+                            new document.
+                          </p>
+                        </div>
+                      )}
+                      <label
+                        className='form-label'
+                        style={{
+                          fontSize: '1.1rem',
+                          color: '#388e3c',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          marginBottom: '1rem',
+                        }}
+                      >
+                        📄 GSTIN Certificate{' '}
+                        <span
+                          style={{
+                            background: '#2196f3',
+                            color: 'white',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: '4px',
+                            fontSize: '0.7rem',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          OPTIONAL
+                        </span>
+                      </label>
+                      <p
+                        style={{
+                          color: '#6d4c41',
+                          fontSize: '0.9rem',
+                          marginBottom: '1rem',
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        Upload your GST Registration Certificate. This will help
+                        establish your business credibility and enable better
+                        trade opportunities. Accepted formats: JPG, PNG, PDF
+                      </p>
+                      <input
+                        type='file'
+                        id='gstin-certificate-upload'
+                        className='file-input'
+                        accept='image/*,.pdf'
+                        onChange={handleGstinCertificateFileChange}
+                      />
+                      <label
+                        htmlFor='gstin-certificate-upload'
+                        className='file-label'
+                        style={{
+                          background: '#388e3c',
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = '#2e7d32';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = '#388e3c';
+                        }}
+                      >
+                        📎 Choose GSTIN Certificate (Optional)
+                      </label>
+                      {gstinCertificateFile && (
+                        <div
+                          className='file-info'
+                          style={{
+                            color: '#2e7d32',
+                            fontWeight: 'bold',
+                            marginTop: '0.75rem',
+                            background: '#c8e6c9',
+                            padding: '0.75rem',
+                            borderRadius: '4px',
+                            border: '1px solid #388e3c',
+                          }}
+                        >
+                          ✅ Selected: {gstinCertificateFile.name} (
+                          {(gstinCertificateFile.size / 1024).toFixed(2)} KB)
+                        </div>
+                      )}
+
+                      <button
+                        type='button'
+                        onClick={() =>
+                          handleOptionalDocSubmit(
+                            'gstinCertificate',
+                            gstinCertificateFile
+                          )
+                        }
+                        disabled={
+                          uploadingOptionalDoc === 'gstinCertificate' ||
+                          !gstinCertificateFile
+                        }
+                        style={{
+                          marginTop: '1rem',
+                          padding: '0.75rem 1.5rem',
+                          background:
+                            uploadingOptionalDoc === 'gstinCertificate' ||
+                            !gstinCertificateFile
+                              ? '#cccccc'
+                              : '#388e3c',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor:
+                            uploadingOptionalDoc === 'gstinCertificate' ||
+                            !gstinCertificateFile
+                              ? 'not-allowed'
+                              : 'pointer',
+                          fontSize: '1rem',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        {uploadingOptionalDoc === 'gstinCertificate'
+                          ? 'Submitting...'
+                          : 'Submit GSTIN Certificate'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* GSTIN Certificate Status Message */}
+                  {optionalDocStatuses.gstinCertificate === 'pending' && (
+                    <div
+                      style={{
+                        background: '#fff3e0',
+                        padding: '1.5rem',
+                        borderRadius: '8px',
+                        border: '2px solid #ff9800',
+                        marginBottom: '2rem',
+                      }}
+                    >
+                      <p
+                        style={{
+                          color: '#e65100',
+                          fontWeight: 'bold',
+                          margin: 0,
+                        }}
+                      >
+                        ⏳ GSTIN Certificate submitted - Pending verification
+                      </p>
+                    </div>
+                  )}
+                  {optionalDocStatuses.gstinCertificate === 'verified' && (
+                    <div
+                      style={{
+                        background: '#e8f5e9',
+                        padding: '1.5rem',
+                        borderRadius: '8px',
+                        border: '2px solid #4caf50',
+                        marginBottom: '2rem',
+                      }}
+                    >
+                      <p
+                        style={{
+                          color: '#2e7d32',
+                          fontWeight: 'bold',
+                          margin: 0,
+                        }}
+                      >
+                        ✅ GSTIN Certificate Verified
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
 
               {/* Only show optional documents for farmers */}
               {userData.userType === 'farmer' && (

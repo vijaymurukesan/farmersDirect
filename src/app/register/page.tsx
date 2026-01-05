@@ -23,6 +23,9 @@ export default function RegisterPage() {
     email: '',
     userType: '',
     cultivationArea: '',
+    companyName: '',
+    cin: '',
+    gstin: '',
     password: '',
     confirmPassword: '',
   });
@@ -65,6 +68,30 @@ export default function RegisterPage() {
       const nameRegex = /^[a-zA-Z\s]*$/;
       if (!nameRegex.test(value)) {
         return; // Don't update if invalid characters
+      }
+    }
+
+    // Company Name validation - alphanumeric and spaces only, no special characters
+    if (field === 'companyName') {
+      const companyRegex = /^[a-zA-Z0-9\s]*$/;
+      if (!companyRegex.test(value)) {
+        return; // Don't update if invalid characters
+      }
+    }
+
+    // CIN validation - alphanumeric only, max 21 characters
+    if (field === 'cin') {
+      const cinRegex = /^[a-zA-Z0-9]*$/;
+      if (!cinRegex.test(value) || value.length > 21) {
+        return; // Don't update if invalid characters or too long
+      }
+    }
+
+    // GSTIN validation - alphanumeric only, max 15 characters
+    if (field === 'gstin') {
+      const gstinRegex = /^[a-zA-Z0-9]*$/;
+      if (!gstinRegex.test(value) || value.length > 15) {
+        return; // Don't update if invalid characters or too long
       }
     }
 
@@ -171,6 +198,57 @@ export default function RegisterPage() {
       }
     }
 
+    // Buyer-specific validation
+    if (formData.userType === 'buyer') {
+      // Company Name - mandatory, alphanumeric with spaces, no special characters
+      if (!formData.companyName || formData.companyName.trim() === '') {
+        showSnackbar('Please enter company name', 'error');
+        return;
+      }
+      const companyRegex = /^[a-zA-Z0-9\s]+$/;
+      if (!companyRegex.test(formData.companyName)) {
+        showSnackbar(
+          'Company name can only contain alphanumeric characters and spaces',
+          'error'
+        );
+        return;
+      }
+
+      // CIN - mandatory, alphanumeric only, max 21 characters
+      if (!formData.cin || formData.cin.trim() === '') {
+        showSnackbar(
+          'Please enter CIN (Corporate Identification Number)',
+          'error'
+        );
+        return;
+      }
+      if (formData.cin.length > 21) {
+        showSnackbar('CIN must not exceed 21 characters', 'error');
+        return;
+      }
+      const cinRegex = /^[a-zA-Z0-9]+$/;
+      if (!cinRegex.test(formData.cin)) {
+        showSnackbar('CIN can only contain alphanumeric characters', 'error');
+        return;
+      }
+
+      // GSTIN - optional, alphanumeric only, max 15 characters if provided
+      if (formData.gstin && formData.gstin.trim() !== '') {
+        if (formData.gstin.length > 15) {
+          showSnackbar('GSTIN must not exceed 15 characters', 'error');
+          return;
+        }
+        const gstinRegex = /^[a-zA-Z0-9]+$/;
+        if (!gstinRegex.test(formData.gstin)) {
+          showSnackbar(
+            'GSTIN can only contain alphanumeric characters',
+            'error'
+          );
+          return;
+        }
+      }
+    }
+
     // Password validation
     const passwordValidation = validatePassword(formData.password);
     if (!passwordValidation.valid) {
@@ -201,6 +279,13 @@ export default function RegisterPage() {
           cultivationArea:
             formData.userType === 'farmer'
               ? formData.cultivationArea
+              : undefined,
+          companyName:
+            formData.userType === 'buyer' ? formData.companyName : undefined,
+          cin: formData.userType === 'buyer' ? formData.cin : undefined,
+          gstin:
+            formData.userType === 'buyer' && formData.gstin
+              ? formData.gstin
               : undefined,
           password: formData.password,
           emailVerified: false,
@@ -514,6 +599,137 @@ export default function RegisterPage() {
                 💡 Enter the total land area you use for farming
               </p>
             </div>
+          )}
+
+          {/* Conditional Buyer-specific fields */}
+          {formData.userType === 'buyer' && (
+            <>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    color: '#388e3c',
+                    fontWeight: 'bold',
+                    marginBottom: '0.5rem',
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  Company Name *
+                </label>
+                <input
+                  type='text'
+                  className='form-input'
+                  value={formData.companyName}
+                  onChange={(e) =>
+                    handleInputChange('companyName', e.target.value)
+                  }
+                  required
+                  placeholder='Enter company name'
+                  style={{
+                    padding: '0.75rem',
+                    border: '2px solid #c8e6c9',
+                    borderRadius: '8px',
+                    fontSize: '1rem',
+                    color: '#000000',
+                    width: '100%',
+                  }}
+                />
+                <p
+                  style={{
+                    color: '#6d4c41',
+                    fontSize: '0.8rem',
+                    marginTop: '0.5rem',
+                    marginBottom: 0,
+                  }}
+                >
+                  💡 Alphanumeric characters and spaces only, no special
+                  characters
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    color: '#388e3c',
+                    fontWeight: 'bold',
+                    marginBottom: '0.5rem',
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  CIN (Corporate Identification Number) *
+                </label>
+                <input
+                  type='text'
+                  className='form-input'
+                  value={formData.cin}
+                  onChange={(e) => handleInputChange('cin', e.target.value)}
+                  required
+                  placeholder='Enter CIN (max 21 characters)'
+                  maxLength={21}
+                  style={{
+                    padding: '0.75rem',
+                    border: '2px solid #c8e6c9',
+                    borderRadius: '8px',
+                    fontSize: '1rem',
+                    color: '#000000',
+                    width: '100%',
+                  }}
+                />
+                <p
+                  style={{
+                    color: '#6d4c41',
+                    fontSize: '0.8rem',
+                    marginTop: '0.5rem',
+                    marginBottom: 0,
+                  }}
+                >
+                  💡 Alphanumeric characters only (max 21 characters) -{' '}
+                  {formData.cin.length}/21
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    color: '#388e3c',
+                    fontWeight: 'bold',
+                    marginBottom: '0.5rem',
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  GSTIN (Optional)
+                </label>
+                <input
+                  type='text'
+                  className='form-input'
+                  value={formData.gstin}
+                  onChange={(e) => handleInputChange('gstin', e.target.value)}
+                  placeholder='Enter GSTIN (max 15 characters)'
+                  maxLength={15}
+                  style={{
+                    padding: '0.75rem',
+                    border: '2px solid #c8e6c9',
+                    borderRadius: '8px',
+                    fontSize: '1rem',
+                    color: '#000000',
+                    width: '100%',
+                  }}
+                />
+                <p
+                  style={{
+                    color: '#6d4c41',
+                    fontSize: '0.8rem',
+                    marginTop: '0.5rem',
+                    marginBottom: 0,
+                  }}
+                >
+                  💡 Alphanumeric characters only (max 15 characters) -{' '}
+                  {formData.gstin.length}/15
+                </p>
+              </div>
+            </>
           )}
 
           <div style={{ marginBottom: '1.5rem' }}>
