@@ -70,6 +70,19 @@ export default function VerificationPage() {
     gstinCertificate: 'none',
   });
 
+  // State for storing rejection reasons for each document
+  const [rejectionReasons, setRejectionReasons] = useState<{
+    [key: string]: string;
+  }>({});
+
+  // State for tracking rejected mandatory documents
+  const [rejectedMandatoryDocs, setRejectedMandatoryDocs] = useState<
+    {
+      documentType: string;
+      rejectionReason: string;
+    }[]
+  >([]);
+
   const [uploadingOptionalDoc, setUploadingOptionalDoc] = useState<
     string | null
   >(null);
@@ -100,6 +113,18 @@ export default function VerificationPage() {
 
   // Check if user is logged in and get verification status
   useEffect(() => {
+    // Check for forceLogout parameter from email links
+    const forceLogout = searchParams.get('forceLogout');
+    if (forceLogout === 'true') {
+      // Clear auth data
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('userData');
+      // Redirect to login with message
+      showSnackbar('Please login to continue', 'info');
+      router.push('/login');
+      return;
+    }
+
     const token = localStorage.getItem('authToken');
     const userDataStr = localStorage.getItem('userData');
 
@@ -112,7 +137,9 @@ export default function VerificationPage() {
       const user = JSON.parse(userDataStr);
       setUserData(user);
       setEmailVerified(user.emailVerified === true);
-      setDocumentVerified(user.userVerified === true);
+      setDocumentVerified(
+        user.userVerified === true || user.documentStatus === 'verified'
+      );
       setDocumentPending(user.documentStatus === 'pending');
 
       // Extract userId from JWT token (most reliable source)
@@ -147,7 +174,7 @@ export default function VerificationPage() {
       console.error('Error parsing user data:', error);
       router.push('/login');
     }
-  }, [router]);
+  }, [router, searchParams]);
 
   // Fetch optional document statuses from database
   const fetchOptionalDocStatuses = async (token: string, userId: string) => {
@@ -188,14 +215,26 @@ export default function VerificationPage() {
             soilHealthCard: 'soilHealthCard',
             other_farming_document: 'otherFarmingDoc',
             otherFarmingDoc: 'otherFarmingDoc',
+            gstin_certificate: 'gstinCertificate',
+            gstinCertificate: 'gstinCertificate',
           };
 
           // Check if kisanId exists (stored differently)
           if (verificationDoc.kisanId) {
-            newStatuses.kisanId =
-              verificationDoc.documentStatus === 'verified'
-                ? 'verified'
-                : 'pending';
+            if (verificationDoc.documentStatus === 'verified') {
+              newStatuses.kisanId = 'verified';
+            } else if (verificationDoc.documentStatus === 'rejected') {
+              newStatuses.kisanId = 'rejected';
+              // Store rejection reason if available
+              if (verificationDoc.kisanIdRejectionReason) {
+                setRejectionReasons((prev) => ({
+                  ...prev,
+                  kisanId: verificationDoc.kisanIdRejectionReason,
+                }));
+              }
+            } else {
+              newStatuses.kisanId = 'pending';
+            }
             console.log('KisanId status set to:', newStatuses.kisanId);
           }
 
@@ -213,16 +252,34 @@ export default function VerificationPage() {
               stateKey
             );
             if (stateKey) {
-              // Check status field first for rejected status
+              // Prioritize status field for better accuracy
               if (doc.status === 'rejected') {
                 newStatuses[stateKey] = 'rejected';
-              } else if (doc.verified === true) {
+                // Store rejection reason if available
+                if (doc.rejectionReason) {
+                  setRejectionReasons((prev) => ({
+                    ...prev,
+                    [stateKey]: doc.rejectionReason,
+                  }));
+                }
+              } else if (doc.status === 'verified' || doc.verified === true) {
                 newStatuses[stateKey] = 'verified';
-              } else if (doc.verified === false) {
+              } else if (
+                doc.status === 'pending' ||
+                (doc.verified === false && !doc.status)
+              ) {
+                // Set to pending if status is explicitly 'pending' OR if verified is false
                 newStatuses[stateKey] = 'pending';
+              } else if (doc.status) {
+                // Use status field if it exists
+                newStatuses[stateKey] = doc.status as
+                  | 'none'
+                  | 'pending'
+                  | 'verified'
+                  | 'rejected';
               } else {
-                // Fallback to status field if verified is not set
-                newStatuses[stateKey] = doc.status || 'pending';
+                // Default fallback
+                newStatuses[stateKey] = 'none';
               }
               console.log(`Set ${stateKey} status to:`, newStatuses[stateKey]);
             }
@@ -230,6 +287,72 @@ export default function VerificationPage() {
 
           console.log('Final statuses to set:', newStatuses);
           setOptionalDocStatuses(newStatuses);
+
+          // Define mandatory document types based on user type
+          const mandatoryDocTypes =
+            userData?.userType === 'farmer'
+              ? ['aadhaar', 'land_registration', 'land_records']
+              : ['company_incorporation', 'director_pan', 'director_aadhaar'];
+
+          // Check if all mandatory documents are verified
+          const verifiedMandatory = docs.filter(
+            (doc: any) =>
+              (doc.status === 'verified' || doc.verified === true) &&
+              mandatoryDocTypes.includes(doc.documentType)
+          );
+
+          // Check for rejected mandatory documents
+          const rejectedMandatory = docs
+            .filter(
+              (doc: any) =>
+                doc.status === 'rejected' &&
+                [
+                  'aadhaar',
+                  'land_registration',
+                  'land_records',
+                  'company_incorporation',
+                  'director_pan',
+                  'director_aadhaar',
+                ].includes(doc.documentType)
+            )
+            .map((doc: any) => ({
+              documentType: doc.documentType,
+              rejectionReason: doc.rejectionReason || 'Document was rejected',
+            }));
+
+          // Update states based on verification status
+          // For farmers: need aadhaar, land_registration, land_records = 3 docs OR Kisan ID
+          // For buyers: need company_incorporation, director_pan, director_aadhaar = 3 docs
+          const requiredDocCount = 3;
+          const isKisanIdVerified =
+            verificationDoc.kisanId &&
+            verificationDoc.documentStatus === 'verified';
+
+          if (
+            verifiedMandatory.length >= requiredDocCount ||
+            isKisanIdVerified
+          ) {
+            // All mandatory documents are verified OR Kisan ID is verified
+            setDocumentVerified(true);
+            setDocumentPending(false);
+            const userDataStr = localStorage.getItem('userData');
+            if (userDataStr) {
+              const user = JSON.parse(userDataStr);
+              user.documentStatus = 'verified';
+              user.userVerified = true;
+              localStorage.setItem('userData', JSON.stringify(user));
+            }
+          } else if (rejectedMandatory.length > 0) {
+            setRejectedMandatoryDocs(rejectedMandatory);
+            // Update document status to show reupload needed
+            setDocumentPending(false);
+            const userDataStr = localStorage.getItem('userData');
+            if (userDataStr) {
+              const user = JSON.parse(userDataStr);
+              user.documentStatus = 'rejected';
+              localStorage.setItem('userData', JSON.stringify(user));
+            }
+          }
         }
       }
     } catch (error) {
@@ -590,47 +713,109 @@ export default function VerificationPage() {
     }
 
     // Regular document upload validation for mandatory documents
-    if (userData.userType === 'farmer') {
-      if (!aadhaarFile) {
-        showSnackbar('Please upload Aadhaar card (mandatory)', 'error');
-        return;
+    // Check if we're in reupload mode (only rejected documents need to be uploaded)
+    const isReuploadMode = rejectedMandatoryDocs.length > 0;
+
+    if (isReuploadMode) {
+      // In reupload mode: Only validate the rejected documents
+      const rejectedDocTypes = rejectedMandatoryDocs.map(
+        (doc) => doc.documentType
+      );
+
+      for (const docType of rejectedDocTypes) {
+        if (userData.userType === 'farmer') {
+          if (docType === 'aadhaar' && !aadhaarFile) {
+            showSnackbar(
+              'Please upload Aadhaar card (rejected document)',
+              'error'
+            );
+            return;
+          }
+          if (docType === 'land_registration' && !landRegistrationFile) {
+            showSnackbar(
+              'Please upload Land Registration Document (rejected document)',
+              'error'
+            );
+            return;
+          }
+          if (docType === 'land_records' && !landRecordsFile) {
+            showSnackbar(
+              'Please upload Land Records document (rejected document)',
+              'error'
+            );
+            return;
+          }
+        } else if (userData.userType === 'buyer') {
+          if (
+            docType === 'company_incorporation' &&
+            !companyIncorporationFile
+          ) {
+            showSnackbar(
+              'Please upload Company Incorporation Certificate (rejected document)',
+              'error'
+            );
+            return;
+          }
+          if (docType === 'director_pan' && !directorPanFile) {
+            showSnackbar(
+              'Please upload Director PAN (rejected document)',
+              'error'
+            );
+            return;
+          }
+          if (docType === 'director_aadhaar' && !directorAadhaarFile) {
+            showSnackbar(
+              'Please upload Director Aadhaar (rejected document)',
+              'error'
+            );
+            return;
+          }
+        }
+      }
+    } else {
+      // Normal mode: Validate all mandatory documents
+      if (userData.userType === 'farmer') {
+        if (!aadhaarFile) {
+          showSnackbar('Please upload Aadhaar card (mandatory)', 'error');
+          return;
+        }
+
+        // For farmers using document verification, validate land documents
+        if (verificationMethod === 'documents') {
+          if (!landRegistrationFile) {
+            showSnackbar(
+              'Please upload Land Registration Document (mandatory)',
+              'error'
+            );
+            return;
+          }
+          if (!landRecordsFile) {
+            showSnackbar(
+              'Please upload Land Records document (mandatory)',
+              'error'
+            );
+            return;
+          }
+        }
       }
 
-      // For farmers using document verification, validate land documents
-      if (verificationMethod === 'documents') {
-        if (!landRegistrationFile) {
+      // For buyers, validate buyer-specific mandatory documents
+      if (userData.userType === 'buyer') {
+        if (!companyIncorporationFile) {
           showSnackbar(
-            'Please upload Land Registration Document (mandatory)',
+            'Please upload Company Incorporation Certificate (mandatory)',
             'error'
           );
           return;
         }
-        if (!landRecordsFile) {
-          showSnackbar(
-            'Please upload Land Records document (mandatory)',
-            'error'
-          );
+        if (!directorPanFile) {
+          showSnackbar('Please upload Director PAN (mandatory)', 'error');
           return;
         }
-      }
-    }
-
-    // For buyers, validate buyer-specific mandatory documents
-    if (userData.userType === 'buyer') {
-      if (!companyIncorporationFile) {
-        showSnackbar(
-          'Please upload Company Incorporation Certificate (mandatory)',
-          'error'
-        );
-        return;
-      }
-      if (!directorPanFile) {
-        showSnackbar('Please upload Director PAN (mandatory)', 'error');
-        return;
-      }
-      if (!directorAadhaarFile) {
-        showSnackbar('Please upload Director Aadhaar (mandatory)', 'error');
-        return;
+        if (!directorAadhaarFile) {
+          showSnackbar('Please upload Director Aadhaar (mandatory)', 'error');
+          return;
+        }
       }
     }
 
@@ -662,25 +847,43 @@ export default function VerificationPage() {
         return await uploadResponse.json();
       };
 
-      // Upload only mandatory documents
-      showSnackbar('Uploading mandatory documents to cloud storage...', 'info');
+      // Upload only mandatory documents (or rejected documents in reupload mode)
+      showSnackbar(
+        isReuploadMode
+          ? 'Uploading rejected documents to cloud storage...'
+          : 'Uploading mandatory documents to cloud storage...',
+        'info'
+      );
 
       const documents = [];
 
+      // Get list of rejected document types if in reupload mode
+      const rejectedDocTypes = isReuploadMode
+        ? rejectedMandatoryDocs.map((doc) => doc.documentType)
+        : [];
+
       // Upload documents based on user type
       if (userData.userType === 'farmer') {
-        // Upload Aadhaar (mandatory for farmers)
-        const aadhaarUpload = await uploadFile(aadhaarFile, 'aadhaar');
-        documents.push({
-          documentType: 'aadhaar',
-          fileName: aadhaarUpload.data.fileName,
-          fileUrl: aadhaarUpload.data.url,
-          fileSize: aadhaarUpload.data.fileSize,
-          fileType: aadhaarUpload.data.fileType,
-        });
+        // Upload Aadhaar (mandatory for farmers or if rejected)
+        if (
+          aadhaarFile &&
+          (!isReuploadMode || rejectedDocTypes.includes('aadhaar'))
+        ) {
+          const aadhaarUpload = await uploadFile(aadhaarFile, 'aadhaar');
+          documents.push({
+            documentType: 'aadhaar',
+            fileName: aadhaarUpload.data.fileName,
+            fileUrl: aadhaarUpload.data.url,
+            fileSize: aadhaarUpload.data.fileSize,
+            fileType: aadhaarUpload.data.fileType,
+          });
+        }
 
-        // Upload land documents for farmers (mandatory)
-        if (landRegistrationFile) {
+        // Upload land documents for farmers (mandatory or if rejected)
+        if (
+          landRegistrationFile &&
+          (!isReuploadMode || rejectedDocTypes.includes('land_registration'))
+        ) {
           const landRegUpload = await uploadFile(
             landRegistrationFile,
             'land_registration'
@@ -693,7 +896,10 @@ export default function VerificationPage() {
             fileType: landRegUpload.data.fileType,
           });
         }
-        if (landRecordsFile) {
+        if (
+          landRecordsFile &&
+          (!isReuploadMode || rejectedDocTypes.includes('land_records'))
+        ) {
           const landRecUpload = await uploadFile(
             landRecordsFile,
             'land_records'
@@ -707,8 +913,12 @@ export default function VerificationPage() {
           });
         }
       } else if (userData.userType === 'buyer') {
-        // Upload buyer mandatory documents
-        if (companyIncorporationFile) {
+        // Upload buyer mandatory documents (or if rejected)
+        if (
+          companyIncorporationFile &&
+          (!isReuploadMode ||
+            rejectedDocTypes.includes('company_incorporation'))
+        ) {
           const companyIncUpload = await uploadFile(
             companyIncorporationFile,
             'company_incorporation'
@@ -721,7 +931,10 @@ export default function VerificationPage() {
             fileType: companyIncUpload.data.fileType,
           });
         }
-        if (directorPanFile) {
+        if (
+          directorPanFile &&
+          (!isReuploadMode || rejectedDocTypes.includes('director_pan'))
+        ) {
           const directorPanUpload = await uploadFile(
             directorPanFile,
             'director_pan'
@@ -734,7 +947,10 @@ export default function VerificationPage() {
             fileType: directorPanUpload.data.fileType,
           });
         }
-        if (directorAadhaarFile) {
+        if (
+          directorAadhaarFile &&
+          (!isReuploadMode || rejectedDocTypes.includes('director_aadhaar'))
+        ) {
           const directorAadhaarUpload = await uploadFile(
             directorAadhaarFile,
             'director_aadhaar'
@@ -749,7 +965,12 @@ export default function VerificationPage() {
         }
       }
 
-      showSnackbar('Saving mandatory document information...', 'info');
+      showSnackbar(
+        isReuploadMode
+          ? 'Saving rejected document information...'
+          : 'Saving mandatory document information...',
+        'info'
+      );
 
       // Submit mandatory document information to database
       const response = await fetch('/api/submit-verification-docs', {
@@ -780,9 +1001,17 @@ export default function VerificationPage() {
         }
 
         showSnackbar(
-          'Mandatory documents submitted successfully! Pending admin verification. 📄',
+          isReuploadMode
+            ? 'Rejected documents reuploaded successfully! Pending admin verification. 📄'
+            : 'Mandatory documents submitted successfully! Pending admin verification. 📄',
           'success'
         );
+
+        // Clear rejected mandatory docs state if in reupload mode
+        if (isReuploadMode) {
+          setRejectedMandatoryDocs([]);
+        }
+
         // Clear farmer documents
         setAadhaarFile(null);
         setLandRegistrationFile(null);
@@ -1264,18 +1493,563 @@ export default function VerificationPage() {
               ⏸️ Complete email verification first
             </div>
           ) : documentVerified ? (
-            <div className='status-badge status-verified'>
-              ✅ Documents Verified
+            <div>
+              <div className='status-badge status-verified'>
+                ✅ Mandatory Documents Verified
+              </div>
+              <div
+                style={{
+                  marginTop: '1rem',
+                  background: '#e8f5e9',
+                  border: '2px solid #4caf50',
+                  borderRadius: '8px',
+                  padding: '1.5rem',
+                }}
+              >
+                <p
+                  style={{
+                    color: '#2e7d32',
+                    fontWeight: 'bold',
+                    margin: '0 0 1rem 0',
+                    fontSize: '1.05rem',
+                  }}
+                >
+                  🎉 Your mandatory documents have been verified and approved!
+                </p>
+                <p
+                  style={{
+                    color: '#388e3c',
+                    margin: 0,
+                    fontSize: '0.95rem',
+                  }}
+                >
+                  {userData.userType === 'farmer'
+                    ? 'Verified documents: Aadhaar Card, Land Registration, Land Records'
+                    : 'Verified documents: Company Incorporation Certificate, Director PAN, Director Aadhaar'}
+                </p>
+              </div>
+            </div>
+          ) : rejectedMandatoryDocs.length > 0 ? (
+            <div>
+              <div
+                className='status-badge'
+                style={{ background: '#ffcdd2', color: '#c62828' }}
+              >
+                ❌ Reupload Rejected Verification Document
+              </div>
+              <div
+                style={{
+                  marginTop: '1rem',
+                  background: '#ffebee',
+                  border: '2px solid #f44336',
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  marginBottom: '2rem',
+                }}
+              >
+                {rejectedMandatoryDocs.map((doc) => (
+                  <div
+                    key={doc.documentType}
+                    style={{ marginBottom: '0.5rem' }}
+                  >
+                    <p
+                      style={{
+                        color: '#c62828',
+                        fontWeight: 'bold',
+                        margin: '0 0 0.25rem 0',
+                      }}
+                    >
+                      {doc.documentType
+                        .replace(/_/g, ' ')
+                        .replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </p>
+                    <p style={{ color: '#666', fontSize: '0.9rem', margin: 0 }}>
+                      Reason: {doc.rejectionReason}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Reupload form - show only rejected document fields */}
+              <form onSubmit={handleDocumentSubmit}>
+                <p
+                  style={{
+                    color: '#6d4c41',
+                    marginBottom: '1.5rem',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Please reupload the rejected document(s) below:
+                </p>
+
+                {/* Show Aadhaar field if rejected */}
+                {rejectedMandatoryDocs.some(
+                  (d) => d.documentType === 'aadhaar'
+                ) && (
+                  <div className='form-group'>
+                    <label className='form-label'>
+                      📇 Aadhaar Card (Mandatory)
+                    </label>
+                    <input
+                      type='file'
+                      id='aadhaar-upload'
+                      className='file-input'
+                      accept='image/*,.pdf'
+                      onChange={handleAadhaarFileChange}
+                    />
+                    <label
+                      htmlFor='aadhaar-upload'
+                      className='file-label'
+                    >
+                      📎 Choose Aadhaar Card
+                    </label>
+                    {aadhaarFile && (
+                      <div className='file-info'>
+                        ✅ Selected: {aadhaarFile.name} (
+                        {(aadhaarFile.size / 1024).toFixed(2)} KB)
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Show Land Registration field if rejected (farmers) */}
+                {userData.userType === 'farmer' &&
+                  rejectedMandatoryDocs.some(
+                    (d) => d.documentType === 'land_registration'
+                  ) && (
+                    <div className='form-group'>
+                      <label className='form-label'>
+                        🏞️ Land Registration Certificate (Mandatory for Farmers)
+                      </label>
+                      <input
+                        type='file'
+                        id='land-registration-upload'
+                        className='file-input'
+                        accept='image/*,.pdf'
+                        onChange={handleLandRegistrationFileChange}
+                      />
+                      <label
+                        htmlFor='land-registration-upload'
+                        className='file-label'
+                      >
+                        📎 Choose Land Registration
+                      </label>
+                      {landRegistrationFile && (
+                        <div className='file-info'>
+                          ✅ Selected: {landRegistrationFile.name} (
+                          {(landRegistrationFile.size / 1024).toFixed(2)} KB)
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* Show Land Records field if rejected (farmers) */}
+                {userData.userType === 'farmer' &&
+                  rejectedMandatoryDocs.some(
+                    (d) => d.documentType === 'land_records'
+                  ) && (
+                    <div className='form-group'>
+                      <label className='form-label'>
+                        📋 Land Records (Mandatory for Farmers)
+                      </label>
+                      <input
+                        type='file'
+                        id='land-records-upload'
+                        className='file-input'
+                        accept='image/*,.pdf'
+                        onChange={handleLandRecordsFileChange}
+                      />
+                      <label
+                        htmlFor='land-records-upload'
+                        className='file-label'
+                      >
+                        📎 Choose Land Records
+                      </label>
+                      {landRecordsFile && (
+                        <div className='file-info'>
+                          ✅ Selected: {landRecordsFile.name} (
+                          {(landRecordsFile.size / 1024).toFixed(2)} KB)
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* Show Company Incorporation field if rejected (buyers) */}
+                {userData.userType === 'buyer' &&
+                  rejectedMandatoryDocs.some(
+                    (d) => d.documentType === 'company_incorporation'
+                  ) && (
+                    <div className='form-group'>
+                      <label className='form-label'>
+                        🏢 Company Incorporation Certificate (Mandatory for
+                        Buyers)
+                      </label>
+                      <input
+                        type='file'
+                        id='company-incorporation-upload'
+                        className='file-input'
+                        accept='image/*,.pdf'
+                        onChange={handleCompanyIncorporationFileChange}
+                      />
+                      <label
+                        htmlFor='company-incorporation-upload'
+                        className='file-label'
+                      >
+                        📎 Choose Company Incorporation Certificate
+                      </label>
+                      {companyIncorporationFile && (
+                        <div className='file-info'>
+                          ✅ Selected: {companyIncorporationFile.name} (
+                          {(companyIncorporationFile.size / 1024).toFixed(2)}{' '}
+                          KB)
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* Show Director PAN field if rejected (buyers) */}
+                {userData.userType === 'buyer' &&
+                  rejectedMandatoryDocs.some(
+                    (d) => d.documentType === 'director_pan'
+                  ) && (
+                    <div className='form-group'>
+                      <label className='form-label'>
+                        🆔 Director PAN Card (Mandatory for Buyers)
+                      </label>
+                      <input
+                        type='file'
+                        id='director-pan-upload'
+                        className='file-input'
+                        accept='image/*,.pdf'
+                        onChange={handleDirectorPanFileChange}
+                      />
+                      <label
+                        htmlFor='director-pan-upload'
+                        className='file-label'
+                      >
+                        📎 Choose Director PAN Card
+                      </label>
+                      {directorPanFile && (
+                        <div className='file-info'>
+                          ✅ Selected: {directorPanFile.name} (
+                          {(directorPanFile.size / 1024).toFixed(2)} KB)
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* Show Director Aadhaar field if rejected (buyers) */}
+                {userData.userType === 'buyer' &&
+                  rejectedMandatoryDocs.some(
+                    (d) => d.documentType === 'director_aadhaar'
+                  ) && (
+                    <div className='form-group'>
+                      <label className='form-label'>
+                        📇 Director Aadhaar Card (Mandatory for Buyers)
+                      </label>
+                      <input
+                        type='file'
+                        id='director-aadhaar-upload'
+                        className='file-input'
+                        accept='image/*,.pdf'
+                        onChange={handleDirectorAadhaarFileChange}
+                      />
+                      <label
+                        htmlFor='director-aadhaar-upload'
+                        className='file-label'
+                      >
+                        📎 Choose Director Aadhaar Card
+                      </label>
+                      {directorAadhaarFile && (
+                        <div className='file-info'>
+                          ✅ Selected: {directorAadhaarFile.name} (
+                          {(directorAadhaarFile.size / 1024).toFixed(2)} KB)
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                <button
+                  type='submit'
+                  disabled={uploadingDocs}
+                  style={{
+                    padding: '0.75rem 2rem',
+                    background: uploadingDocs ? '#cccccc' : '#388e3c',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: uploadingDocs ? 'not-allowed' : 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    marginTop: '1rem',
+                  }}
+                >
+                  {uploadingDocs ? 'Uploading...' : '📤 Resubmit Documents'}
+                </button>
+              </form>
             </div>
           ) : documentPending ? (
             <div>
-              <div className='status-badge status-pending'>
-                ⏳ Pending Admin Verification
-              </div>
-              <p style={{ color: '#6d4c41', marginTop: '1rem' }}>
-                Your documents have been submitted and are pending admin review.
-                You will be notified once the verification is complete.
-              </p>
+              {/* Check if Kisan ID was rejected */}
+              {optionalDocStatuses.kisanId === 'rejected' ? (
+                <div>
+                  <div
+                    className='status-badge'
+                    style={{ background: '#ffcdd2', color: '#c62828' }}
+                  >
+                    ❌ Kisan ID Rejected - Reenter Required
+                  </div>
+
+                  {/* Show rejection reason */}
+                  <div
+                    style={{
+                      marginTop: '1rem',
+                      background: '#ffebee',
+                      border: '2px solid #f44336',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      marginBottom: '2rem',
+                    }}
+                  >
+                    <p
+                      style={{
+                        color: '#c62828',
+                        fontWeight: 'bold',
+                        margin: '0 0 0.5rem 0',
+                      }}
+                    >
+                      Kisan Credit Card ID
+                    </p>
+                    {rejectionReasons.kisanId && (
+                      <p
+                        style={{ color: '#666', fontSize: '0.9rem', margin: 0 }}
+                      >
+                        Reason: {rejectionReasons.kisanId}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Kisan ID Re-entry Form */}
+                  <div
+                    style={{
+                      background: '#fff3e0',
+                      padding: '1.5rem',
+                      borderRadius: '8px',
+                      border: '2px solid #ff9800',
+                      marginBottom: '2rem',
+                    }}
+                  >
+                    <label
+                      style={{
+                        fontSize: '1.1rem',
+                        color: '#e65100',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        marginBottom: '1rem',
+                      }}
+                    >
+                      🆔 Re-enter Kisan ID (PM-KISAN)
+                      <span
+                        style={{
+                          background: '#d32f2f',
+                          color: 'white',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '4px',
+                          fontSize: '0.7rem',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        REQUIRED
+                      </span>
+                    </label>
+
+                    <p
+                      style={{
+                        color: '#6d4c41',
+                        fontSize: '0.9rem',
+                        marginBottom: '1rem',
+                        fontStyle: 'italic',
+                      }}
+                    >
+                      Please enter your correct Kisan ID (PM-KISAN beneficiary
+                      ID).
+                    </p>
+
+                    <input
+                      type='text'
+                      placeholder='Enter your Kisan ID (e.g., TN01234567890)'
+                      value={kisanId}
+                      onChange={(e) => setKisanId(e.target.value.trim())}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        border: '2px solid #ffb74d',
+                        borderRadius: '8px',
+                        fontSize: '1rem',
+                        fontFamily: 'monospace',
+                        letterSpacing: '1px',
+                        marginBottom: '1rem',
+                        color: '#333',
+                      }}
+                    />
+
+                    {/* Consent Checkbox */}
+                    <div
+                      style={{
+                        background: 'white',
+                        padding: '1rem',
+                        borderRadius: '8px',
+                        border: '2px solid #ffe0b2',
+                        marginBottom: '1rem',
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '0.75rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type='checkbox'
+                          checked={kisanConsent}
+                          onChange={(e) => setKisanConsent(e.target.checked)}
+                          style={{
+                            width: '20px',
+                            height: '20px',
+                            marginTop: '2px',
+                            accentColor: '#ff9800',
+                          }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <span
+                            style={{ color: '#e65100', fontWeight: 'bold' }}
+                          >
+                            I hereby authorize "Farmer's Direct"
+                          </span>
+                          <span
+                            style={{ color: '#6d4c41', fontSize: '0.95rem' }}
+                          >
+                            {' '}
+                            to verify my Kisan ID through the official
+                            government portal.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+
+                    <button
+                      type='button'
+                      onClick={async () => {
+                        if (!kisanId || kisanId.trim() === '') {
+                          showSnackbar('Please enter your Kisan ID', 'error');
+                          return;
+                        }
+                        if (!kisanConsent) {
+                          showSnackbar(
+                            'Please provide consent for Kisan ID verification',
+                            'error'
+                          );
+                          return;
+                        }
+
+                        setUploadingDocs(true);
+                        try {
+                          const token = localStorage.getItem('authToken');
+                          const response = await fetch(
+                            '/api/submit-verification-docs',
+                            {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: JSON.stringify({
+                                kisanId: kisanId,
+                                verificationMethod: 'kisan',
+                                consent: kisanConsent,
+                              }),
+                            }
+                          );
+
+                          const result = await response.json();
+
+                          if (response.ok && result.success) {
+                            showSnackbar(
+                              '🎉 Kisan ID resubmitted successfully! Pending verification.',
+                              'success'
+                            );
+                            setOptionalDocStatuses((prev) => ({
+                              ...prev,
+                              kisanId: 'pending',
+                            }));
+                            setDocumentPending(true);
+                            const updatedUserData = {
+                              ...userData,
+                              documentStatus: 'pending',
+                            };
+                            localStorage.setItem(
+                              'userData',
+                              JSON.stringify(updatedUserData)
+                            );
+                            setUserData(updatedUserData);
+                          } else {
+                            throw new Error(
+                              result.message || 'Failed to submit Kisan ID'
+                            );
+                          }
+                        } catch (error) {
+                          console.error('Error submitting Kisan ID:', error);
+                          showSnackbar(
+                            `Error: ${
+                              error instanceof Error
+                                ? error.message
+                                : 'Failed to submit Kisan ID'
+                            }`,
+                            'error'
+                          );
+                        } finally {
+                          setUploadingDocs(false);
+                        }
+                      }}
+                      disabled={uploadingDocs || !kisanId || !kisanConsent}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem 2rem',
+                        background:
+                          uploadingDocs || !kisanId || !kisanConsent
+                            ? '#cccccc'
+                            : '#388e3c',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor:
+                          uploadingDocs || !kisanId || !kisanConsent
+                            ? 'not-allowed'
+                            : 'pointer',
+                        fontSize: '1rem',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      {uploadingDocs ? 'Submitting...' : '🔄 Resubmit Kisan ID'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className='status-badge status-pending'>
+                    ⏳ Pending Admin Verification
+                  </div>
+                  <p style={{ color: '#6d4c41', marginTop: '1rem' }}>
+                    Your documents have been submitted and are pending admin
+                    review. You will be notified once the verification is
+                    complete.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <form onSubmit={handleDocumentSubmit}>
@@ -1477,6 +2251,7 @@ export default function VerificationPage() {
                         fontFamily: 'monospace',
                         letterSpacing: '1px',
                         marginBottom: '1rem',
+                        color: '#333',
                       }}
                       required
                     />
@@ -2349,7 +3124,7 @@ export default function VerificationPage() {
         </div>
 
         {/* Step 3: Optional Documents (Recommended to highlight your profile) */}
-        {emailVerified && !documentVerified && documentPending && (
+        {emailVerified && (documentPending || documentVerified) && (
           <div className='step-card'>
             <div className='step-header'>
               <div className='step-number'>3</div>
@@ -2406,13 +3181,43 @@ export default function VerificationPage() {
                             style={{
                               color: '#c62828',
                               fontWeight: 'bold',
-                              margin: 0,
+                              margin: '0 0 0.5rem 0',
                               fontSize: '0.95rem',
                             }}
                           >
-                            ❌ Previous document was rejected. Please upload a
-                            new document.
+                            ❌ Document Rejected - Reupload Required
                           </p>
+                          {rejectionReasons.gstinCertificate && (
+                            <div
+                              style={{
+                                background: '#fff',
+                                border: '1px solid #ffcdd2',
+                                borderRadius: '4px',
+                                padding: '0.75rem',
+                                marginTop: '0.5rem',
+                              }}
+                            >
+                              <p
+                                style={{
+                                  margin: '0 0 0.25rem 0',
+                                  fontSize: '0.85rem',
+                                  color: '#d32f2f',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                Rejection Reason:
+                              </p>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: '0.9rem',
+                                  color: '#333',
+                                }}
+                              >
+                                {rejectionReasons.gstinCertificate}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                       <label
@@ -2609,13 +3414,43 @@ export default function VerificationPage() {
                             style={{
                               color: '#c62828',
                               fontWeight: 'bold',
-                              margin: 0,
+                              margin: '0 0 0.5rem 0',
                               fontSize: '0.95rem',
                             }}
                           >
-                            ❌ Previous document was rejected. Please upload a
-                            new document.
+                            ❌ Document Rejected - Reupload Required
                           </p>
+                          {rejectionReasons.organicLicense && (
+                            <div
+                              style={{
+                                background: '#fff',
+                                border: '1px solid #ffcdd2',
+                                borderRadius: '4px',
+                                padding: '0.75rem',
+                                marginTop: '0.5rem',
+                              }}
+                            >
+                              <p
+                                style={{
+                                  margin: '0 0 0.25rem 0',
+                                  fontSize: '0.85rem',
+                                  color: '#d32f2f',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                Rejection Reason:
+                              </p>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: '0.9rem',
+                                  color: '#333',
+                                }}
+                              >
+                                {rejectionReasons.organicLicense}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                       <label
@@ -2805,13 +3640,43 @@ export default function VerificationPage() {
                             style={{
                               color: '#c62828',
                               fontWeight: 'bold',
-                              margin: 0,
+                              margin: '0 0 0.5rem 0',
                               fontSize: '0.95rem',
                             }}
                           >
-                            ❌ Previous document was rejected. Please upload a
-                            new document.
+                            ❌ Document Rejected - Reupload Required
                           </p>
+                          {rejectionReasons.farmerCertificate && (
+                            <div
+                              style={{
+                                background: '#fff',
+                                border: '1px solid #ffcdd2',
+                                borderRadius: '4px',
+                                padding: '0.75rem',
+                                marginTop: '0.5rem',
+                              }}
+                            >
+                              <p
+                                style={{
+                                  margin: '0 0 0.25rem 0',
+                                  fontSize: '0.85rem',
+                                  color: '#d32f2f',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                Rejection Reason:
+                              </p>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: '0.9rem',
+                                  color: '#333',
+                                }}
+                              >
+                                {rejectionReasons.farmerCertificate}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                       <label
@@ -3001,13 +3866,43 @@ export default function VerificationPage() {
                             style={{
                               color: '#c62828',
                               fontWeight: 'bold',
-                              margin: 0,
+                              margin: '0 0 0.5rem 0',
                               fontSize: '0.95rem',
                             }}
                           >
-                            ❌ Previous document was rejected. Please upload a
-                            new document.
+                            ❌ Document Rejected - Reupload Required
                           </p>
+                          {rejectionReasons.cropInsurance && (
+                            <div
+                              style={{
+                                background: '#fff',
+                                border: '1px solid #ffcdd2',
+                                borderRadius: '4px',
+                                padding: '0.75rem',
+                                marginTop: '0.5rem',
+                              }}
+                            >
+                              <p
+                                style={{
+                                  margin: '0 0 0.25rem 0',
+                                  fontSize: '0.85rem',
+                                  color: '#d32f2f',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                Rejection Reason:
+                              </p>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: '0.9rem',
+                                  color: '#333',
+                                }}
+                              >
+                                {rejectionReasons.cropInsurance}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                       <label
@@ -3197,13 +4092,43 @@ export default function VerificationPage() {
                             style={{
                               color: '#c62828',
                               fontWeight: 'bold',
-                              margin: 0,
+                              margin: '0 0 0.5rem 0',
                               fontSize: '0.95rem',
                             }}
                           >
-                            ❌ Previous document was rejected. Please upload a
-                            new document.
+                            ❌ Document Rejected - Reupload Required
                           </p>
+                          {rejectionReasons.fpoMembership && (
+                            <div
+                              style={{
+                                background: '#fff',
+                                border: '1px solid #ffcdd2',
+                                borderRadius: '4px',
+                                padding: '0.75rem',
+                                marginTop: '0.5rem',
+                              }}
+                            >
+                              <p
+                                style={{
+                                  margin: '0 0 0.25rem 0',
+                                  fontSize: '0.85rem',
+                                  color: '#d32f2f',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                Rejection Reason:
+                              </p>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: '0.9rem',
+                                  color: '#333',
+                                }}
+                              >
+                                {rejectionReasons.fpoMembership}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                       <label
@@ -3395,13 +4320,43 @@ export default function VerificationPage() {
                             style={{
                               color: '#c62828',
                               fontWeight: 'bold',
-                              margin: 0,
+                              margin: '0 0 0.5rem 0',
                               fontSize: '0.95rem',
                             }}
                           >
-                            ❌ Previous document was rejected. Please upload a
-                            new document.
+                            ❌ Document Rejected - Reupload Required
                           </p>
+                          {rejectionReasons.soilHealthCard && (
+                            <div
+                              style={{
+                                background: '#fff',
+                                border: '1px solid #ffcdd2',
+                                borderRadius: '4px',
+                                padding: '0.75rem',
+                                marginTop: '0.5rem',
+                              }}
+                            >
+                              <p
+                                style={{
+                                  margin: '0 0 0.25rem 0',
+                                  fontSize: '0.85rem',
+                                  color: '#d32f2f',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                Rejection Reason:
+                              </p>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: '0.9rem',
+                                  color: '#333',
+                                }}
+                              >
+                                {rejectionReasons.soilHealthCard}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                       <label
@@ -3591,13 +4546,43 @@ export default function VerificationPage() {
                             style={{
                               color: '#c62828',
                               fontWeight: 'bold',
-                              margin: 0,
+                              margin: '0 0 0.5rem 0',
                               fontSize: '0.95rem',
                             }}
                           >
-                            ❌ Previous document was rejected. Please upload a
-                            new document.
+                            ❌ Document Rejected - Reupload Required
                           </p>
+                          {rejectionReasons.otherFarmingDoc && (
+                            <div
+                              style={{
+                                background: '#fff',
+                                border: '1px solid #ffcdd2',
+                                borderRadius: '4px',
+                                padding: '0.75rem',
+                                marginTop: '0.5rem',
+                              }}
+                            >
+                              <p
+                                style={{
+                                  margin: '0 0 0.25rem 0',
+                                  fontSize: '0.85rem',
+                                  color: '#d32f2f',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                Rejection Reason:
+                              </p>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: '0.9rem',
+                                  color: '#333',
+                                }}
+                              >
+                                {rejectionReasons.otherFarmingDoc}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                       <label

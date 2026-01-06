@@ -40,6 +40,11 @@ interface VerificationDoc {
   kisanId?: string;
   kisanConsent?: boolean;
   documentStatus?: string;
+  kisanIdVerified?: boolean;
+  kisanIdVerifiedBy?: string;
+  kisanIdVerifiedAt?: string;
+  kisanIdRejectionReason?: string;
+  kisanIdRejectedAt?: string;
   documents: VerificationDocument[];
   submittedAt: string;
   updatedAt: string;
@@ -69,6 +74,27 @@ export default function AdminPage() {
     type: 'info' as 'success' | 'error' | 'warning' | 'info',
   });
 
+  // Rejection modal state
+  const [rejectionModal, setRejectionModal] = useState({
+    isOpen: false,
+    userId: '',
+    documentType: '',
+    userEmail: '',
+  });
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [customReason, setCustomReason] = useState('');
+
+  const rejectionReasons = [
+    'Document is not clear or readable',
+    'Document is expired',
+    'Document does not match the required type',
+    'Information is incomplete or incorrect',
+    'Document appears to be tampered or fake',
+    'Wrong document uploaded',
+    'Poor image quality',
+    'Other',
+  ];
+
   const showSnackbar = (
     message: string,
     type: 'success' | 'error' | 'warning' | 'info' = 'info'
@@ -91,8 +117,23 @@ export default function AdminPage() {
   const handleDocumentAction = async (
     userId: string,
     documentType: string,
-    action: 'accept' | 'reject'
+    action: 'accept' | 'reject',
+    userEmail?: string
   ) => {
+    // If reject action, show rejection modal
+    if (action === 'reject') {
+      setRejectionModal({
+        isOpen: true,
+        userId,
+        documentType,
+        userEmail: userEmail || '',
+      });
+      setRejectionReason('');
+      setCustomReason('');
+      return;
+    }
+
+    // For accept action, proceed directly
     try {
       const token = localStorage.getItem('authToken');
       const userData = localStorage.getItem('userData');
@@ -139,6 +180,76 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Error updating document:', error);
       showSnackbar('Error updating document', 'error');
+    }
+  };
+
+  // Confirm rejection with reason
+  const confirmRejection = async () => {
+    const finalReason =
+      rejectionReason === 'Other' ? customReason : rejectionReason;
+
+    if (!finalReason) {
+      showSnackbar('Please select or enter a rejection reason', 'warning');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const userData = localStorage.getItem('userData');
+      const user = userData ? JSON.parse(userData) : null;
+
+      const response = await fetch('/api/verification-docs', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: rejectionModal.userId,
+          documentType: rejectionModal.documentType,
+          action: 'reject',
+          adminEmail: user?.email || 'admin',
+          rejectionReason: finalReason,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        showSnackbar('Document rejected successfully!', 'success');
+
+        // Close modal
+        setRejectionModal({
+          isOpen: false,
+          userId: '',
+          documentType: '',
+          userEmail: '',
+        });
+        setRejectionReason('');
+        setCustomReason('');
+
+        // Refresh data
+        const usersResponse = await fetch('/api/user', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (usersResponse.ok) {
+          const usersData = await usersResponse.json();
+          setUsers(usersData.data || []);
+        }
+
+        const docsResponse = await fetch('/api/verification-docs', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (docsResponse.ok) {
+          const docsData = await docsResponse.json();
+          setVerificationDocs(docsData.data || []);
+        }
+      } else {
+        showSnackbar(result.message || 'Failed to reject document', 'error');
+      }
+    } catch (error) {
+      console.error('Error rejecting document:', error);
+      showSnackbar('Error rejecting document', 'error');
     }
   };
 
@@ -1032,7 +1143,9 @@ export default function AdminPage() {
                                     >
                                       {user.fullName}
                                       {userDocs &&
-                                        userDocs.documents.length > 0 && (
+                                        (userDocs.documents.length > 0 ||
+                                          (userDocs.kisanId &&
+                                            userDocs.kisanConsent)) && (
                                           <button
                                             onClick={() =>
                                               setExpandedUser(
@@ -1357,7 +1470,8 @@ export default function AdminPage() {
                                           >
                                             📄 Submitted Documents
                                           </h4>
-                                          {userDocs.documents.length === 0 ? (
+                                          {userDocs.documents.length === 0 &&
+                                          !userDocs.kisanId ? (
                                             <p style={{ color: '#757575' }}>
                                               No documents submitted yet
                                             </p>
@@ -1450,250 +1564,134 @@ export default function AdminPage() {
 
                                                 return (
                                                   <>
-                                                    {/* Kisan ID Verification Section - Show when Kisan ID is available */}
-                                                    {hasKisanVerification && (
+                                                    {/* Mandatory Documents Section */}
+                                                    <div
+                                                      style={{
+                                                        marginBottom: '2rem',
+                                                      }}
+                                                    >
                                                       <div
                                                         style={{
-                                                          marginBottom: '2rem',
+                                                          background: '#ffebee',
+                                                          border:
+                                                            '2px solid #f44336',
+                                                          borderRadius: '8px',
+                                                          padding:
+                                                            '0.75rem 1rem',
+                                                          marginBottom: '1rem',
+                                                          display: 'flex',
+                                                          alignItems: 'center',
+                                                          gap: '0.5rem',
                                                         }}
                                                       >
-                                                        <div
+                                                        <span
                                                           style={{
-                                                            background:
-                                                              '#e8f5e9',
-                                                            border:
-                                                              '2px solid #4caf50',
-                                                            borderRadius: '8px',
-                                                            padding:
-                                                              '0.75rem 1rem',
-                                                            marginBottom:
-                                                              '1rem',
-                                                            display: 'flex',
-                                                            alignItems:
-                                                              'center',
-                                                            gap: '0.5rem',
+                                                            fontSize: '1.2rem',
                                                           }}
                                                         >
-                                                          <span
-                                                            style={{
-                                                              fontSize:
-                                                                '1.2rem',
-                                                            }}
-                                                          >
-                                                            🆔
-                                                          </span>
-                                                          <strong
-                                                            style={{
-                                                              color: '#2e7d32',
-                                                            }}
-                                                          >
-                                                            Kisan ID
-                                                            Verification
-                                                          </strong>
-                                                          <span
-                                                            style={{
-                                                              marginLeft:
-                                                                'auto',
-                                                              background:
-                                                                userDocs.documentStatus ===
-                                                                'verified'
-                                                                  ? '#4caf50'
-                                                                  : '#ff9800',
-                                                              color: 'white',
-                                                              padding:
-                                                                '0.25rem 0.75rem',
-                                                              borderRadius:
-                                                                '12px',
-                                                              fontSize:
-                                                                '0.85rem',
-                                                              fontWeight:
-                                                                'bold',
-                                                            }}
-                                                          >
-                                                            {userDocs.documentStatus ===
-                                                            'verified'
-                                                              ? '✓ Verified'
-                                                              : '⏳ Pending'}
-                                                          </span>
-                                                        </div>
+                                                          ⚠️
+                                                        </span>
+                                                        <strong
+                                                          style={{
+                                                            color: '#c62828',
+                                                          }}
+                                                        >
+                                                          Mandatory Documents
+                                                        </strong>
+                                                        <span
+                                                          style={{
+                                                            marginLeft: 'auto',
+                                                            background:
+                                                              '#c62828',
+                                                            color: 'white',
+                                                            padding:
+                                                              '0.25rem 0.75rem',
+                                                            borderRadius:
+                                                              '12px',
+                                                            fontSize: '0.85rem',
+                                                            fontWeight: 'bold',
+                                                          }}
+                                                        >
+                                                          {(hasKisanVerification
+                                                            ? 1
+                                                            : 0) +
+                                                            mandatoryDocs.length}{' '}
+                                                          Submitted
+                                                        </span>
+                                                      </div>
+                                                      {!hasKisanVerification &&
+                                                      mandatoryDocs.length ===
+                                                        0 ? (
                                                         <div
                                                           style={{
                                                             background: 'white',
                                                             border:
-                                                              '2px solid #4caf50',
+                                                              '2px dashed #e0e0e0',
                                                             borderRadius: '8px',
-                                                            padding: '1.5rem',
+                                                            padding: '2rem',
+                                                            textAlign: 'center',
+                                                            color: '#999',
                                                           }}
                                                         >
-                                                          <div
+                                                          <p
                                                             style={{
-                                                              display: 'grid',
-                                                              gridTemplateColumns:
-                                                                '1fr 1fr',
-                                                              gap: '1rem',
-                                                              marginBottom:
-                                                                '1rem',
+                                                              margin: 0,
+                                                              fontSize:
+                                                                '0.9rem',
                                                             }}
                                                           >
-                                                            <div>
+                                                            No mandatory
+                                                            documents submitted
+                                                            yet
+                                                          </p>
+                                                          <p
+                                                            style={{
+                                                              margin:
+                                                                '0.5rem 0 0 0',
+                                                              fontSize:
+                                                                '0.85rem',
+                                                            }}
+                                                          >
+                                                            Required: Aadhaar,
+                                                            Land Registration,
+                                                            Land Records
+                                                          </p>
+                                                        </div>
+                                                      ) : (
+                                                        <div
+                                                          style={{
+                                                            display: 'grid',
+                                                            gap: '1rem',
+                                                          }}
+                                                        >
+                                                          {/* Kisan ID as Mandatory Document */}
+                                                          {hasKisanVerification && (
+                                                            <div
+                                                              style={{
+                                                                background:
+                                                                  'white',
+                                                                border: `2px solid ${
+                                                                  userDocs.documentStatus ===
+                                                                  'verified'
+                                                                    ? '#4caf50'
+                                                                    : userDocs.documentStatus ===
+                                                                      'rejected'
+                                                                    ? '#f44336'
+                                                                    : '#ff9800'
+                                                                }`,
+                                                                borderRadius:
+                                                                  '8px',
+                                                                padding: '1rem',
+                                                              }}
+                                                            >
                                                               <div
                                                                 style={{
-                                                                  fontSize:
-                                                                    '0.85rem',
-                                                                  color: '#666',
-                                                                  marginBottom:
-                                                                    '0.25rem',
-                                                                }}
-                                                              >
-                                                                Kisan Credit
-                                                                Card ID
-                                                              </div>
-                                                              <div
-                                                                style={{
-                                                                  fontSize:
-                                                                    '1.1rem',
-                                                                  fontWeight:
-                                                                    'bold',
-                                                                  color:
-                                                                    '#2e7d32',
-                                                                  fontFamily:
-                                                                    'monospace',
-                                                                }}
-                                                              >
-                                                                {
-                                                                  userDocs.kisanId
-                                                                }
-                                                              </div>
-                                                            </div>
-                                                            <div>
-                                                              <div
-                                                                style={{
-                                                                  fontSize:
-                                                                    '0.85rem',
-                                                                  color: '#666',
-                                                                  marginBottom:
-                                                                    '0.25rem',
-                                                                }}
-                                                              >
-                                                                User Consent
-                                                              </div>
-                                                              <div
-                                                                style={{
-                                                                  fontSize:
-                                                                    '1rem',
-                                                                  fontWeight:
-                                                                    'bold',
-                                                                  color:
-                                                                    '#4caf50',
-                                                                }}
-                                                              >
-                                                                ✓ Provided
-                                                              </div>
-                                                            </div>
-                                                            <div>
-                                                              <div
-                                                                style={{
-                                                                  fontSize:
-                                                                    '0.85rem',
-                                                                  color: '#666',
-                                                                  marginBottom:
-                                                                    '0.25rem',
-                                                                }}
-                                                              >
-                                                                Verification
-                                                                Method
-                                                              </div>
-                                                              <div
-                                                                style={{
-                                                                  fontSize:
-                                                                    '1rem',
                                                                   fontWeight:
                                                                     'bold',
                                                                   color:
                                                                     '#388e3c',
-                                                                }}
-                                                              >
-                                                                Kisan ID
-                                                              </div>
-                                                            </div>
-                                                            <div>
-                                                              <div
-                                                                style={{
-                                                                  fontSize:
-                                                                    '0.85rem',
-                                                                  color: '#666',
                                                                   marginBottom:
-                                                                    '0.25rem',
-                                                                }}
-                                                              >
-                                                                Submitted On
-                                                              </div>
-                                                              <div
-                                                                style={{
-                                                                  fontSize:
-                                                                    '0.95rem',
-                                                                  color: '#333',
-                                                                }}
-                                                              >
-                                                                {new Date(
-                                                                  userDocs.submittedAt
-                                                                ).toLocaleDateString(
-                                                                  'en-US',
-                                                                  {
-                                                                    year: 'numeric',
-                                                                    month:
-                                                                      'short',
-                                                                    day: 'numeric',
-                                                                    hour: '2-digit',
-                                                                    minute:
-                                                                      '2-digit',
-                                                                  }
-                                                                )}
-                                                              </div>
-                                                            </div>
-                                                          </div>
-
-                                                          {userDocs.documentStatus !==
-                                                            'verified' && (
-                                                            <div
-                                                              style={{
-                                                                display: 'flex',
-                                                                gap: '1rem',
-                                                                justifyContent:
-                                                                  'flex-end',
-                                                                marginTop:
-                                                                  '1.5rem',
-                                                                paddingTop:
-                                                                  '1rem',
-                                                                borderTop:
-                                                                  '1px solid #e0e0e0',
-                                                              }}
-                                                            >
-                                                              <button
-                                                                onClick={() =>
-                                                                  handleDocumentAction(
-                                                                    user._id,
-                                                                    'kisanId',
-                                                                    'accept'
-                                                                  )
-                                                                }
-                                                                style={{
-                                                                  background:
-                                                                    '#4caf50',
-                                                                  color:
-                                                                    'white',
-                                                                  border:
-                                                                    'none',
-                                                                  borderRadius:
-                                                                    '8px',
-                                                                  padding:
-                                                                    '0.75rem 2rem',
-                                                                  cursor:
-                                                                    'pointer',
-                                                                  fontSize:
-                                                                    '1rem',
-                                                                  fontWeight:
-                                                                    'bold',
+                                                                    '0.5rem',
                                                                   display:
                                                                     'flex',
                                                                   alignItems:
@@ -1701,265 +1699,466 @@ export default function AdminPage() {
                                                                   gap: '0.5rem',
                                                                 }}
                                                               >
-                                                                ✓ Accept Kisan
-                                                                ID Verification
-                                                              </button>
-                                                              <button
-                                                                onClick={() =>
-                                                                  handleDocumentAction(
-                                                                    user._id,
-                                                                    'kisanId',
-                                                                    'reject'
-                                                                  )
-                                                                }
-                                                                style={{
-                                                                  background:
-                                                                    '#f44336',
-                                                                  color:
-                                                                    'white',
-                                                                  border:
-                                                                    'none',
-                                                                  borderRadius:
-                                                                    '8px',
-                                                                  padding:
-                                                                    '0.75rem 2rem',
-                                                                  cursor:
-                                                                    'pointer',
-                                                                  fontSize:
-                                                                    '1rem',
-                                                                  fontWeight:
-                                                                    'bold',
-                                                                  display:
-                                                                    'flex',
-                                                                  alignItems:
-                                                                    'center',
-                                                                  gap: '0.5rem',
-                                                                }}
-                                                              >
-                                                                ✗ Reject Kisan
-                                                                ID Verification
-                                                              </button>
-                                                            </div>
-                                                          )}
-                                                        </div>
-                                                      </div>
-                                                    )}
-
-                                                    {/* Mandatory Documents Section - Show only when NO Kisan ID verification */}
-                                                    {!hasKisanVerification && (
-                                                      <div
-                                                        style={{
-                                                          marginBottom: '2rem',
-                                                        }}
-                                                      >
-                                                        <div
-                                                          style={{
-                                                            background:
-                                                              '#ffebee',
-                                                            border:
-                                                              '2px solid #f44336',
-                                                            borderRadius: '8px',
-                                                            padding:
-                                                              '0.75rem 1rem',
-                                                            marginBottom:
-                                                              '1rem',
-                                                            display: 'flex',
-                                                            alignItems:
-                                                              'center',
-                                                            gap: '0.5rem',
-                                                          }}
-                                                        >
-                                                          <span
-                                                            style={{
-                                                              fontSize:
-                                                                '1.2rem',
-                                                            }}
-                                                          >
-                                                            ⚠️
-                                                          </span>
-                                                          <strong
-                                                            style={{
-                                                              color: '#c62828',
-                                                            }}
-                                                          >
-                                                            Mandatory Documents
-                                                          </strong>
-                                                          <span
-                                                            style={{
-                                                              marginLeft:
-                                                                'auto',
-                                                              background:
-                                                                '#c62828',
-                                                              color: 'white',
-                                                              padding:
-                                                                '0.25rem 0.75rem',
-                                                              borderRadius:
-                                                                '12px',
-                                                              fontSize:
-                                                                '0.85rem',
-                                                              fontWeight:
-                                                                'bold',
-                                                            }}
-                                                          >
-                                                            {
-                                                              mandatoryDocs.length
-                                                            }{' '}
-                                                            Submitted
-                                                          </span>
-                                                        </div>
-                                                        {mandatoryDocs.length ===
-                                                        0 ? (
-                                                          <div
-                                                            style={{
-                                                              background:
-                                                                'white',
-                                                              border:
-                                                                '2px dashed #e0e0e0',
-                                                              borderRadius:
-                                                                '8px',
-                                                              padding: '2rem',
-                                                              textAlign:
-                                                                'center',
-                                                              color: '#999',
-                                                            }}
-                                                          >
-                                                            <p
-                                                              style={{
-                                                                margin: 0,
-                                                                fontSize:
-                                                                  '0.9rem',
-                                                              }}
-                                                            >
-                                                              No mandatory
-                                                              documents
-                                                              submitted yet
-                                                            </p>
-                                                            <p
-                                                              style={{
-                                                                margin:
-                                                                  '0.5rem 0 0 0',
-                                                                fontSize:
-                                                                  '0.85rem',
-                                                              }}
-                                                            >
-                                                              Required: Aadhaar,
-                                                              Land Registration,
-                                                              Land Records
-                                                            </p>
-                                                          </div>
-                                                        ) : (
-                                                          <div
-                                                            style={{
-                                                              display: 'grid',
-                                                              gap: '1rem',
-                                                            }}
-                                                          >
-                                                            {mandatoryDocs.map(
-                                                              (doc, index) => (
-                                                                <div
-                                                                  key={`mandatory-${index}`}
+                                                                <span
                                                                   style={{
                                                                     background:
-                                                                      'white',
-                                                                    border: `2px solid ${
-                                                                      doc.verified
-                                                                        ? '#4caf50'
-                                                                        : doc.status ===
-                                                                          'rejected'
-                                                                        ? '#f44336'
-                                                                        : '#ff9800'
-                                                                    }`,
-                                                                    borderRadius:
-                                                                      '8px',
+                                                                      '#ffebee',
+                                                                    color:
+                                                                      '#c62828',
                                                                     padding:
-                                                                      '1rem',
-                                                                    display:
-                                                                      'flex',
-                                                                    justifyContent:
-                                                                      'space-between',
-                                                                    alignItems:
-                                                                      'center',
-                                                                    flexWrap:
-                                                                      'wrap',
-                                                                    gap: '1rem',
+                                                                      '0.2rem 0.5rem',
+                                                                    borderRadius:
+                                                                      '4px',
+                                                                    fontSize:
+                                                                      '0.75rem',
+                                                                    fontWeight:
+                                                                      'bold',
                                                                   }}
                                                                 >
+                                                                  REQUIRED
+                                                                </span>
+                                                                🆔 Kisan Credit
+                                                                Card ID
+                                                                <span
+                                                                  style={{
+                                                                    marginLeft:
+                                                                      'auto',
+                                                                    background:
+                                                                      userDocs.documentStatus ===
+                                                                      'verified'
+                                                                        ? '#4caf50'
+                                                                        : userDocs.documentStatus ===
+                                                                          'rejected'
+                                                                        ? '#f44336'
+                                                                        : '#ff9800',
+                                                                    color:
+                                                                      'white',
+                                                                    padding:
+                                                                      '0.25rem 0.75rem',
+                                                                    borderRadius:
+                                                                      '12px',
+                                                                    fontSize:
+                                                                      '0.75rem',
+                                                                    fontWeight:
+                                                                      'bold',
+                                                                  }}
+                                                                >
+                                                                  {userDocs.documentStatus ===
+                                                                  'verified'
+                                                                    ? '✓ Verified'
+                                                                    : userDocs.documentStatus ===
+                                                                      'rejected'
+                                                                    ? '✗ Rejected'
+                                                                    : '⏳ Pending'}
+                                                                </span>
+                                                              </div>
+                                                              <div
+                                                                style={{
+                                                                  fontSize:
+                                                                    '0.9rem',
+                                                                  color: '#666',
+                                                                  marginBottom:
+                                                                    '0.75rem',
+                                                                }}
+                                                              >
+                                                                <div
+                                                                  style={{
+                                                                    marginBottom:
+                                                                      '0.5rem',
+                                                                  }}
+                                                                >
+                                                                  <strong>
+                                                                    Kisan ID:
+                                                                  </strong>{' '}
+                                                                  <span
+                                                                    style={{
+                                                                      fontFamily:
+                                                                        'monospace',
+                                                                      color:
+                                                                        '#2e7d32',
+                                                                    }}
+                                                                  >
+                                                                    {
+                                                                      userDocs.kisanId
+                                                                    }
+                                                                  </span>
+                                                                </div>
+                                                                <div
+                                                                  style={{
+                                                                    marginBottom:
+                                                                      '0.5rem',
+                                                                  }}
+                                                                >
+                                                                  <strong>
+                                                                    Consent:
+                                                                  </strong>{' '}
+                                                                  ✓ Provided
+                                                                </div>
+                                                                <div>
+                                                                  <strong>
+                                                                    Submitted:
+                                                                  </strong>{' '}
+                                                                  {new Date(
+                                                                    userDocs.submittedAt
+                                                                  ).toLocaleDateString(
+                                                                    'en-US',
+                                                                    {
+                                                                      year: 'numeric',
+                                                                      month:
+                                                                        'short',
+                                                                      day: 'numeric',
+                                                                      hour: '2-digit',
+                                                                      minute:
+                                                                        '2-digit',
+                                                                    }
+                                                                  )}
+                                                                </div>
+                                                              </div>
+
+                                                              {/* Verification Details */}
+                                                              {userDocs.documentStatus ===
+                                                                'verified' &&
+                                                                userDocs.kisanIdVerified && (
                                                                   <div
                                                                     style={{
-                                                                      flex: 1,
+                                                                      background:
+                                                                        '#e8f5e9',
+                                                                      border:
+                                                                        '1px solid #4caf50',
+                                                                      borderRadius:
+                                                                        '4px',
+                                                                      padding:
+                                                                        '0.75rem',
+                                                                      marginBottom:
+                                                                        '0.75rem',
+                                                                      fontSize:
+                                                                        '0.85rem',
                                                                     }}
                                                                   >
                                                                     <div
                                                                       style={{
+                                                                        color:
+                                                                          '#2e7d32',
                                                                         fontWeight:
                                                                           'bold',
-                                                                        color:
-                                                                          '#388e3c',
                                                                         marginBottom:
                                                                           '0.5rem',
-                                                                        display:
-                                                                          'flex',
-                                                                        alignItems:
-                                                                          'center',
-                                                                        gap: '0.5rem',
                                                                       }}
                                                                     >
-                                                                      <span
-                                                                        style={{
-                                                                          background:
-                                                                            '#ffebee',
-                                                                          color:
-                                                                            '#c62828',
-                                                                          padding:
-                                                                            '0.2rem 0.5rem',
-                                                                          borderRadius:
-                                                                            '4px',
-                                                                          fontSize:
-                                                                            '0.75rem',
-                                                                          fontWeight:
-                                                                            'bold',
-                                                                        }}
-                                                                      >
-                                                                        REQUIRED
-                                                                      </span>
-                                                                      {
-                                                                        doc.documentType
-                                                                      }
+                                                                      ✓
+                                                                      Verification
+                                                                      Details:
                                                                     </div>
                                                                     <div
                                                                       style={{
-                                                                        fontSize:
-                                                                          '0.9rem',
                                                                         color:
                                                                           '#666',
                                                                       }}
                                                                     >
-                                                                      📎{' '}
+                                                                      <div>
+                                                                        Verified
+                                                                        By:{' '}
+                                                                        {userDocs.kisanIdVerifiedBy ||
+                                                                          'N/A'}
+                                                                      </div>
+                                                                      <div>
+                                                                        Verified
+                                                                        On:{' '}
+                                                                        {userDocs.kisanIdVerifiedAt
+                                                                          ? new Date(
+                                                                              userDocs.kisanIdVerifiedAt
+                                                                            ).toLocaleDateString(
+                                                                              'en-US',
+                                                                              {
+                                                                                year: 'numeric',
+                                                                                month:
+                                                                                  'short',
+                                                                                day: 'numeric',
+                                                                                hour: '2-digit',
+                                                                                minute:
+                                                                                  '2-digit',
+                                                                              }
+                                                                            )
+                                                                          : 'N/A'}
+                                                                      </div>
+                                                                    </div>
+                                                                  </div>
+                                                                )}
+
+                                                              {/* Rejection Details */}
+                                                              {userDocs.documentStatus ===
+                                                                'rejected' &&
+                                                                userDocs.kisanIdRejectionReason && (
+                                                                  <div
+                                                                    style={{
+                                                                      background:
+                                                                        '#ffebee',
+                                                                      border:
+                                                                        '1px solid #f44336',
+                                                                      borderRadius:
+                                                                        '4px',
+                                                                      padding:
+                                                                        '0.75rem',
+                                                                      marginBottom:
+                                                                        '0.75rem',
+                                                                      fontSize:
+                                                                        '0.85rem',
+                                                                    }}
+                                                                  >
+                                                                    <div
+                                                                      style={{
+                                                                        color:
+                                                                          '#d32f2f',
+                                                                        fontWeight:
+                                                                          'bold',
+                                                                        marginBottom:
+                                                                          '0.5rem',
+                                                                      }}
+                                                                    >
+                                                                      ❌
+                                                                      Rejection
+                                                                      Reason:
+                                                                    </div>
+                                                                    <div
+                                                                      style={{
+                                                                        color:
+                                                                          '#666',
+                                                                      }}
+                                                                    >
                                                                       {
-                                                                        doc.fileName
+                                                                        userDocs.kisanIdRejectionReason
                                                                       }
                                                                     </div>
-                                                                    {doc.fileSize && (
+                                                                    {userDocs.kisanIdRejectedAt && (
                                                                       <div
                                                                         style={{
-                                                                          fontSize:
-                                                                            '0.85rem',
                                                                           color:
                                                                             '#999',
+                                                                          fontSize:
+                                                                            '0.8rem',
                                                                           marginTop:
-                                                                            '0.25rem',
+                                                                            '0.5rem',
                                                                         }}
                                                                       >
-                                                                        Size:{' '}
-                                                                        {(
-                                                                          doc.fileSize /
-                                                                          1024
-                                                                        ).toFixed(
-                                                                          2
-                                                                        )}{' '}
-                                                                        KB
+                                                                        Rejected
+                                                                        on:{' '}
+                                                                        {new Date(
+                                                                          userDocs.kisanIdRejectedAt
+                                                                        ).toLocaleDateString(
+                                                                          'en-US',
+                                                                          {
+                                                                            year: 'numeric',
+                                                                            month:
+                                                                              'short',
+                                                                            day: 'numeric',
+                                                                            hour: '2-digit',
+                                                                            minute:
+                                                                              '2-digit',
+                                                                          }
+                                                                        )}
                                                                       </div>
                                                                     )}
+                                                                  </div>
+                                                                )}
+
+                                                              {/* Action Buttons */}
+                                                              {userDocs.documentStatus !==
+                                                                'verified' && (
+                                                                <div
+                                                                  style={{
+                                                                    display:
+                                                                      'flex',
+                                                                    gap: '0.5rem',
+                                                                    justifyContent:
+                                                                      'flex-end',
+                                                                  }}
+                                                                >
+                                                                  <button
+                                                                    onClick={() =>
+                                                                      handleDocumentAction(
+                                                                        user._id,
+                                                                        'kisanId',
+                                                                        'accept'
+                                                                      )
+                                                                    }
+                                                                    style={{
+                                                                      background:
+                                                                        '#4caf50',
+                                                                      color:
+                                                                        'white',
+                                                                      border:
+                                                                        'none',
+                                                                      borderRadius:
+                                                                        '4px',
+                                                                      padding:
+                                                                        '0.5rem 1rem',
+                                                                      cursor:
+                                                                        'pointer',
+                                                                      fontSize:
+                                                                        '0.85rem',
+                                                                      fontWeight:
+                                                                        'bold',
+                                                                    }}
+                                                                  >
+                                                                    ✓ Accept
+                                                                  </button>
+                                                                  <button
+                                                                    onClick={() =>
+                                                                      handleDocumentAction(
+                                                                        user._id,
+                                                                        'kisanId',
+                                                                        'reject'
+                                                                      )
+                                                                    }
+                                                                    style={{
+                                                                      background:
+                                                                        '#f44336',
+                                                                      color:
+                                                                        'white',
+                                                                      border:
+                                                                        'none',
+                                                                      borderRadius:
+                                                                        '4px',
+                                                                      padding:
+                                                                        '0.5rem 1rem',
+                                                                      cursor:
+                                                                        'pointer',
+                                                                      fontSize:
+                                                                        '0.85rem',
+                                                                      fontWeight:
+                                                                        'bold',
+                                                                    }}
+                                                                  >
+                                                                    ✗ Reject
+                                                                  </button>
+                                                                </div>
+                                                              )}
+                                                            </div>
+                                                          )}
+
+                                                          {/* Other Mandatory Documents */}
+                                                          {mandatoryDocs.map(
+                                                            (doc, index) => (
+                                                              <div
+                                                                key={`mandatory-${index}`}
+                                                                style={{
+                                                                  background:
+                                                                    'white',
+                                                                  border: `2px solid ${
+                                                                    doc.verified
+                                                                      ? '#4caf50'
+                                                                      : doc.status ===
+                                                                        'rejected'
+                                                                      ? '#f44336'
+                                                                      : '#ff9800'
+                                                                  }`,
+                                                                  borderRadius:
+                                                                    '8px',
+                                                                  padding:
+                                                                    '1rem',
+                                                                  display:
+                                                                    'flex',
+                                                                  justifyContent:
+                                                                    'space-between',
+                                                                  alignItems:
+                                                                    'center',
+                                                                  flexWrap:
+                                                                    'wrap',
+                                                                  gap: '1rem',
+                                                                }}
+                                                              >
+                                                                <div
+                                                                  style={{
+                                                                    flex: 1,
+                                                                  }}
+                                                                >
+                                                                  <div
+                                                                    style={{
+                                                                      fontWeight:
+                                                                        'bold',
+                                                                      color:
+                                                                        '#388e3c',
+                                                                      marginBottom:
+                                                                        '0.5rem',
+                                                                      display:
+                                                                        'flex',
+                                                                      alignItems:
+                                                                        'center',
+                                                                      gap: '0.5rem',
+                                                                    }}
+                                                                  >
+                                                                    <span
+                                                                      style={{
+                                                                        background:
+                                                                          '#ffebee',
+                                                                        color:
+                                                                          '#c62828',
+                                                                        padding:
+                                                                          '0.2rem 0.5rem',
+                                                                        borderRadius:
+                                                                          '4px',
+                                                                        fontSize:
+                                                                          '0.75rem',
+                                                                        fontWeight:
+                                                                          'bold',
+                                                                      }}
+                                                                    >
+                                                                      REQUIRED
+                                                                    </span>
+                                                                    {
+                                                                      doc.documentType
+                                                                    }
+                                                                  </div>
+                                                                  <div
+                                                                    style={{
+                                                                      fontSize:
+                                                                        '0.9rem',
+                                                                      color:
+                                                                        '#666',
+                                                                    }}
+                                                                  >
+                                                                    📎{' '}
+                                                                    {
+                                                                      doc.fileName
+                                                                    }
+                                                                  </div>
+                                                                  {doc.fileSize && (
+                                                                    <div
+                                                                      style={{
+                                                                        fontSize:
+                                                                          '0.85rem',
+                                                                        color:
+                                                                          '#999',
+                                                                        marginTop:
+                                                                          '0.25rem',
+                                                                      }}
+                                                                    >
+                                                                      Size:{' '}
+                                                                      {(
+                                                                        doc.fileSize /
+                                                                        1024
+                                                                      ).toFixed(
+                                                                        2
+                                                                      )}{' '}
+                                                                      KB
+                                                                    </div>
+                                                                  )}
+                                                                  <div
+                                                                    style={{
+                                                                      fontSize:
+                                                                        '0.85rem',
+                                                                      color:
+                                                                        '#666',
+                                                                      marginTop:
+                                                                        '0.25rem',
+                                                                    }}
+                                                                  >
+                                                                    Submitted:{' '}
+                                                                    {new Date(
+                                                                      doc.submittedAt
+                                                                    ).toLocaleDateString()}
+                                                                  </div>
+                                                                  {doc.verifiedBy && (
                                                                     <div
                                                                       style={{
                                                                         fontSize:
@@ -1970,170 +2169,152 @@ export default function AdminPage() {
                                                                           '0.25rem',
                                                                       }}
                                                                     >
-                                                                      Submitted:{' '}
-                                                                      {new Date(
-                                                                        doc.submittedAt
-                                                                      ).toLocaleDateString()}
+                                                                      Verified
+                                                                      by:{' '}
+                                                                      {
+                                                                        doc.verifiedBy
+                                                                      }
                                                                     </div>
-                                                                    {doc.verifiedBy && (
-                                                                      <div
-                                                                        style={{
-                                                                          fontSize:
-                                                                            '0.85rem',
-                                                                          color:
-                                                                            '#666',
-                                                                          marginTop:
-                                                                            '0.25rem',
-                                                                        }}
-                                                                      >
-                                                                        Verified
-                                                                        by:{' '}
-                                                                        {
-                                                                          doc.verifiedBy
-                                                                        }
-                                                                      </div>
-                                                                    )}
-                                                                  </div>
+                                                                  )}
+                                                                </div>
 
-                                                                  <div
-                                                                    style={{
-                                                                      display:
-                                                                        'flex',
-                                                                      gap: '0.5rem',
-                                                                      alignItems:
-                                                                        'center',
-                                                                    }}
-                                                                  >
-                                                                    <span
-                                                                      className={`status-badge ${
-                                                                        doc.verified
-                                                                          ? 'status-verified'
-                                                                          : doc.status ===
-                                                                            'rejected'
-                                                                          ? 'status-unverified'
-                                                                          : 'status-pending'
-                                                                      }`}
-                                                                      style={{
-                                                                        marginRight:
-                                                                          '0.5rem',
-                                                                      }}
-                                                                    >
-                                                                      {doc.verified
-                                                                        ? '✓ Verified'
+                                                                <div
+                                                                  style={{
+                                                                    display:
+                                                                      'flex',
+                                                                    gap: '0.5rem',
+                                                                    alignItems:
+                                                                      'center',
+                                                                  }}
+                                                                >
+                                                                  <span
+                                                                    className={`status-badge ${
+                                                                      doc.verified
+                                                                        ? 'status-verified'
                                                                         : doc.status ===
                                                                           'rejected'
-                                                                        ? '✗ Rejected'
-                                                                        : '⏳ Pending'}
-                                                                    </span>
+                                                                        ? 'status-unverified'
+                                                                        : 'status-pending'
+                                                                    }`}
+                                                                    style={{
+                                                                      marginRight:
+                                                                        '0.5rem',
+                                                                    }}
+                                                                  >
+                                                                    {doc.verified
+                                                                      ? '✓ Verified'
+                                                                      : doc.status ===
+                                                                        'rejected'
+                                                                      ? '✗ Rejected'
+                                                                      : '⏳ Pending'}
+                                                                  </span>
 
-                                                                    <a
-                                                                      href={
-                                                                        doc.fileUrl
-                                                                      }
-                                                                      download={
-                                                                        doc.fileName
-                                                                      }
-                                                                      target='_blank'
-                                                                      rel='noopener noreferrer'
-                                                                      style={{
-                                                                        background:
-                                                                          '#2196f3',
-                                                                        color:
-                                                                          'white',
-                                                                        border:
-                                                                          'none',
-                                                                        borderRadius:
-                                                                          '4px',
-                                                                        padding:
-                                                                          '0.5rem 1rem',
-                                                                        cursor:
-                                                                          'pointer',
-                                                                        textDecoration:
-                                                                          'none',
-                                                                        fontSize:
-                                                                          '0.85rem',
-                                                                        display:
-                                                                          'inline-block',
-                                                                      }}
-                                                                    >
-                                                                      ⬇️
-                                                                      Download
-                                                                    </a>
+                                                                  <a
+                                                                    href={
+                                                                      doc.fileUrl
+                                                                    }
+                                                                    download={
+                                                                      doc.fileName
+                                                                    }
+                                                                    target='_blank'
+                                                                    rel='noopener noreferrer'
+                                                                    style={{
+                                                                      background:
+                                                                        '#2196f3',
+                                                                      color:
+                                                                        'white',
+                                                                      border:
+                                                                        'none',
+                                                                      borderRadius:
+                                                                        '4px',
+                                                                      padding:
+                                                                        '0.5rem 1rem',
+                                                                      cursor:
+                                                                        'pointer',
+                                                                      textDecoration:
+                                                                        'none',
+                                                                      fontSize:
+                                                                        '0.85rem',
+                                                                      display:
+                                                                        'inline-block',
+                                                                    }}
+                                                                  >
+                                                                    ⬇️ Download
+                                                                  </a>
 
-                                                                    {!doc.verified &&
-                                                                      doc.status !==
-                                                                        'rejected' && (
-                                                                        <>
-                                                                          <button
-                                                                            onClick={() =>
-                                                                              handleDocumentAction(
-                                                                                user._id,
-                                                                                doc.documentType,
-                                                                                'accept'
-                                                                              )
-                                                                            }
-                                                                            style={{
-                                                                              background:
-                                                                                '#4caf50',
-                                                                              color:
-                                                                                'white',
-                                                                              border:
-                                                                                'none',
-                                                                              borderRadius:
-                                                                                '4px',
-                                                                              padding:
-                                                                                '0.5rem 1rem',
-                                                                              cursor:
-                                                                                'pointer',
-                                                                              fontSize:
-                                                                                '0.85rem',
-                                                                              fontWeight:
-                                                                                'bold',
-                                                                            }}
-                                                                          >
-                                                                            ✓
-                                                                            Accept
-                                                                          </button>
-                                                                          <button
-                                                                            onClick={() =>
-                                                                              handleDocumentAction(
-                                                                                user._id,
-                                                                                doc.documentType,
-                                                                                'reject'
-                                                                              )
-                                                                            }
-                                                                            style={{
-                                                                              background:
-                                                                                '#f44336',
-                                                                              color:
-                                                                                'white',
-                                                                              border:
-                                                                                'none',
-                                                                              borderRadius:
-                                                                                '4px',
-                                                                              padding:
-                                                                                '0.5rem 1rem',
-                                                                              cursor:
-                                                                                'pointer',
-                                                                              fontSize:
-                                                                                '0.85rem',
-                                                                              fontWeight:
-                                                                                'bold',
-                                                                            }}
-                                                                          >
-                                                                            ✗
-                                                                            Reject
-                                                                          </button>
-                                                                        </>
-                                                                      )}
-                                                                  </div>
+                                                                  {!doc.verified &&
+                                                                    doc.status !==
+                                                                      'rejected' && (
+                                                                      <>
+                                                                        <button
+                                                                          onClick={() =>
+                                                                            handleDocumentAction(
+                                                                              user._id,
+                                                                              doc.documentType,
+                                                                              'accept'
+                                                                            )
+                                                                          }
+                                                                          style={{
+                                                                            background:
+                                                                              '#4caf50',
+                                                                            color:
+                                                                              'white',
+                                                                            border:
+                                                                              'none',
+                                                                            borderRadius:
+                                                                              '4px',
+                                                                            padding:
+                                                                              '0.5rem 1rem',
+                                                                            cursor:
+                                                                              'pointer',
+                                                                            fontSize:
+                                                                              '0.85rem',
+                                                                            fontWeight:
+                                                                              'bold',
+                                                                          }}
+                                                                        >
+                                                                          ✓
+                                                                          Accept
+                                                                        </button>
+                                                                        <button
+                                                                          onClick={() =>
+                                                                            handleDocumentAction(
+                                                                              user._id,
+                                                                              doc.documentType,
+                                                                              'reject'
+                                                                            )
+                                                                          }
+                                                                          style={{
+                                                                            background:
+                                                                              '#f44336',
+                                                                            color:
+                                                                              'white',
+                                                                            border:
+                                                                              'none',
+                                                                            borderRadius:
+                                                                              '4px',
+                                                                            padding:
+                                                                              '0.5rem 1rem',
+                                                                            cursor:
+                                                                              'pointer',
+                                                                            fontSize:
+                                                                              '0.85rem',
+                                                                            fontWeight:
+                                                                              'bold',
+                                                                          }}
+                                                                        >
+                                                                          ✗
+                                                                          Reject
+                                                                        </button>
+                                                                      </>
+                                                                    )}
                                                                 </div>
-                                                              )
-                                                            )}
-                                                          </div>
-                                                        )}
-                                                      </div>
-                                                    )}
+                                                              </div>
+                                                            )
+                                                          )}
+                                                        </div>
+                                                      )}
+                                                    </div>
 
                                                     {/* Optional Documents Section */}
                                                     {optionalDocs.length >
@@ -2607,7 +2788,9 @@ export default function AdminPage() {
                                     >
                                       {user.fullName}
                                       {userDocs &&
-                                        userDocs.documents.length > 0 && (
+                                        (userDocs.documents.length > 0 ||
+                                          (userDocs.kisanId &&
+                                            userDocs.kisanConsent)) && (
                                           <button
                                             onClick={() =>
                                               setExpandedUser(
@@ -2757,7 +2940,8 @@ export default function AdminPage() {
                                           >
                                             📄 Submitted Documents
                                           </h4>
-                                          {userDocs.documents.length === 0 ? (
+                                          {userDocs.documents.length === 0 &&
+                                          !userDocs.kisanId ? (
                                             <p style={{ color: '#757575' }}>
                                               No documents submitted yet
                                             </p>
@@ -3208,6 +3392,187 @@ export default function AdminPage() {
         </div>
       </div>
       <Footer />
+
+      {/* Rejection Reason Modal */}
+      {rejectionModal.isOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10000,
+            backdropFilter: 'blur(4px)',
+          }}
+          onClick={() =>
+            setRejectionModal({
+              isOpen: false,
+              userId: '',
+              documentType: '',
+              userEmail: '',
+            })
+          }
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '16px',
+              padding: '2rem',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ color: '#d32f2f', margin: '0 0 1.5rem 0' }}>
+              🚫 Reject Document
+            </h2>
+
+            <p style={{ color: '#666', marginBottom: '1rem' }}>
+              Please select a reason for rejecting this document:
+            </p>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              {rejectionReasons.map((reason) => (
+                <div
+                  key={reason}
+                  style={{
+                    marginBottom: '0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0.75rem',
+                    border:
+                      rejectionReason === reason
+                        ? '2px solid #388e3c'
+                        : '1px solid #e0e0e0',
+                    borderRadius: '8px',
+                    background:
+                      rejectionReason === reason ? '#f1f8e9' : 'white',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onClick={() => setRejectionReason(reason)}
+                >
+                  <input
+                    type='radio'
+                    name='rejectionReason'
+                    value={reason}
+                    checked={rejectionReason === reason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    style={{
+                      marginRight: '0.75rem',
+                      accentColor: '#388e3c',
+                    }}
+                  />
+                  <label
+                    style={{
+                      cursor: 'pointer',
+                      flex: 1,
+                      color: '#333',
+                      fontSize: '0.95rem',
+                    }}
+                  >
+                    {reason}
+                  </label>
+                </div>
+              ))}
+            </div>
+
+            {rejectionReason === 'Other' && (
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '0.5rem',
+                    fontWeight: 'bold',
+                    color: '#388e3c',
+                  }}
+                >
+                  Custom Reason:
+                </label>
+                <textarea
+                  value={customReason}
+                  onChange={(e) => setCustomReason(e.target.value)}
+                  placeholder='Enter custom rejection reason...'
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '2px solid #e0e0e0',
+                    borderRadius: '8px',
+                    fontSize: '1rem',
+                    resize: 'vertical',
+                    minHeight: '100px',
+                    fontFamily: 'Arial, sans-serif',
+                  }}
+                />
+              </div>
+            )}
+
+            <div
+              style={{
+                display: 'flex',
+                gap: '1rem',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <button
+                onClick={() =>
+                  setRejectionModal({
+                    isOpen: false,
+                    userId: '',
+                    documentType: '',
+                    userEmail: '',
+                  })
+                }
+                style={{
+                  background: '#f5f5f5',
+                  color: '#757575',
+                  border: '2px solid #e0e0e0',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1.5rem',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  fontWeight: 'bold',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRejection}
+                disabled={
+                  !rejectionReason ||
+                  (rejectionReason === 'Other' && !customReason)
+                }
+                style={{
+                  background:
+                    rejectionReason &&
+                    (rejectionReason !== 'Other' || customReason)
+                      ? '#d32f2f'
+                      : '#ccc',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1.5rem',
+                  cursor:
+                    rejectionReason &&
+                    (rejectionReason !== 'Other' || customReason)
+                      ? 'pointer'
+                      : 'not-allowed',
+                  fontSize: '1rem',
+                  fontWeight: 'bold',
+                }}
+              >
+                Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Snackbar
         message={snackbar.message}

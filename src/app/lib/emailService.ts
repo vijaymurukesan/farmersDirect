@@ -17,6 +17,10 @@ export const sendVerificationEmail = async (
   verificationLink: string
 ) => {
   const transporter = createTransporter();
+  
+  // Add forceLogout parameter to verification link
+  const separator = verificationLink.includes('?') ? '&' : '?';
+  const linkWithLogout = `${verificationLink}${separator}forceLogout=true`;
 
   const mailOptions = {
     from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
@@ -91,14 +95,14 @@ export const sendVerificationEmail = async (
             <p>To complete your registration and start using our platform, please verify your email address by clicking the button below:</p>
             
             <div style="text-align: center;">
-              <a href="${verificationLink}" class="button">
+              <a href="${linkWithLogout}" class="button">
                 ✅ Verify Email Address
               </a>
             </div>
             
             <p>Or copy and paste this link into your browser:</p>
             <p style="word-break: break-all; color: #1976d2; font-size: 14px;">
-              ${verificationLink}
+              ${linkWithLogout}
             </p>
             
             <div class="warning">
@@ -122,7 +126,7 @@ export const sendVerificationEmail = async (
       
       To complete your registration, please verify your email address by clicking the link below:
       
-      ${verificationLink}
+      ${linkWithLogout}
       
       This verification link will expire in 24 hours.
       
@@ -152,7 +156,7 @@ export const sendUserVerificationEmail = async (
   
   // Get the base URL from environment or construct it
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-  const loginLink = `${baseUrl}/login`;
+  const loginLink = `${baseUrl}/login?forceLogout=true`;
 
   const mailOptions = {
     from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
@@ -384,6 +388,266 @@ export const sendUserVerificationEmail = async (
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('Error sending user verification email:', error);
+    throw error;
+  }
+};
+
+// Send document rejection email
+export const sendDocumentRejectionEmail = async (
+  to: string,
+  fullName: string,
+  documentType: string,
+  rejectionReason: string,
+  verificationLink: string
+) => {
+  const transporter = createTransporter();
+
+  const mailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: to,
+    subject: 'Document Resubmission Required - Farmers Direct',
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background: #fff3cd;
+              padding: 20px;
+              text-align: center;
+              border-radius: 8px 8px 0 0;
+              border-top: 4px solid #ff9800;
+            }
+            .header h1 {
+              color: #ff6f00;
+              margin: 0;
+              font-size: 24px;
+            }
+            .header .icon {
+              font-size: 48px;
+              margin-bottom: 10px;
+            }
+            .content {
+              background: #fff;
+              padding: 30px;
+              border: 2px solid #ffe082;
+              border-radius: 0 0 8px 8px;
+            }
+            .alert-box {
+              background: #ffebee;
+              border-left: 4px solid #f44336;
+              padding: 15px;
+              border-radius: 4px;
+              margin: 20px 0;
+            }
+            .alert-box h3 {
+              color: #d32f2f;
+              margin: 0 0 10px 0;
+              font-size: 18px;
+            }
+            .document-info {
+              background: #f1f8e9;
+              border: 2px solid #c8e6c9;
+              padding: 15px;
+              border-radius: 8px;
+              margin: 20px 0;
+            }
+            .document-info h3 {
+              color: #388e3c;
+              margin: 0 0 10px 0;
+            }
+            .document-info p {
+              margin: 5px 0;
+              color: #6d4c41;
+            }
+            .reason-box {
+              background: #fff9e6;
+              border: 1px solid #ffd54f;
+              padding: 15px;
+              border-radius: 8px;
+              margin: 15px 0;
+            }
+            .reason-box strong {
+              color: #f57c00;
+            }
+            .button {
+              display: inline-block;
+              padding: 14px 35px;
+              background: #388e3c;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+              box-shadow: 0 4px 12px rgba(56, 142, 60, 0.3);
+            }
+            .button:hover {
+              background: #2e7d32;
+            }
+            .steps {
+              background: #e8f5e9;
+              padding: 20px;
+              border-radius: 8px;
+              margin: 20px 0;
+            }
+            .steps h3 {
+              color: #388e3c;
+              margin-top: 0;
+            }
+            .steps ol {
+              margin: 10px 0;
+              padding-left: 20px;
+            }
+            .steps li {
+              margin: 10px 0;
+              color: #6d4c41;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 30px;
+              color: #6d4c41;
+              font-size: 12px;
+            }
+            .divider {
+              border-top: 2px dashed #c8e6c9;
+              margin: 25px 0;
+            }
+            .warning-note {
+              background: #fff3cd;
+              border: 1px solid #ffc107;
+              padding: 12px;
+              border-radius: 4px;
+              margin-top: 20px;
+              font-size: 14px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="icon">⚠️</div>
+            <h1>Document Resubmission Required</h1>
+          </div>
+          <div class="content">
+            <p>Dear <strong>${fullName}</strong>,</p>
+            
+            <p>Thank you for submitting your verification documents to Farmers Direct.</p>
+            
+            <div class="alert-box">
+              <h3>📄 Document Review Update</h3>
+              <p>We've reviewed your submitted documents and unfortunately, we need you to resubmit the following document:</p>
+            </div>
+
+            <div class="document-info">
+              <h3>Rejected Document:</h3>
+              <p style="font-size: 18px; font-weight: bold; color: #d32f2f;">
+                ${documentType}
+              </p>
+            </div>
+
+            <div class="reason-box">
+              <strong>⚠️ Rejection Reason:</strong>
+              <p style="margin: 10px 0 0 0; font-size: 15px; color: #333;">
+                ${rejectionReason}
+              </p>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="steps">
+              <h3>📋 How to Resubmit Your Document:</h3>
+              <ol>
+                <li><strong>Click the button below</strong> to go to the verification page</li>
+                <li><strong>Locate the rejected document</strong> (marked with rejection reason)</li>
+                <li><strong>Click "Reupload Document"</strong> button for that specific document</li>
+                <li><strong>Select a new file</strong> that addresses the rejection reason</li>
+                <li><strong>Submit</strong> the document for review</li>
+              </ol>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${verificationLink}" class="button">
+                📤 Go to Verification Page
+              </a>
+            </div>
+
+            <p style="text-align: center; font-size: 14px; color: #6d4c41;">
+              Or copy and paste this link into your browser:
+            </p>
+            <p style="word-break: break-all; color: #1976d2; font-size: 14px; text-align: center;">
+              ${verificationLink}
+            </p>
+
+            <div class="warning-note">
+              <strong>⏰ Important:</strong> Please resubmit your document as soon as possible to complete your account verification and gain full access to the platform.
+            </div>
+
+            <div class="divider"></div>
+
+            <p style="color: #6d4c41; font-size: 14px; margin-top: 25px;">
+              <strong>Need Help?</strong><br>
+              If you have any questions about the rejection reason or need assistance with the resubmission process, please contact our support team.
+            </p>
+
+            <p style="margin-top: 25px;">
+              Thank you for your cooperation and patience! 🌱
+            </p>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+            <p style="margin-top: 10px;">
+              This is an automated message. Please do not reply to this email.
+            </p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Document Resubmission Required
+      
+      Dear ${fullName},
+      
+      Thank you for submitting your verification documents to Farmers Direct.
+      
+      DOCUMENT REVIEW UPDATE:
+      We've reviewed your submitted documents and unfortunately, we need you to resubmit the following document:
+      
+      Rejected Document: ${documentType}
+      
+      Rejection Reason: ${rejectionReason}
+      
+      HOW TO RESUBMIT YOUR DOCUMENT:
+      1. Visit the verification page: ${verificationLink}
+      2. Locate the rejected document (marked with rejection reason)
+      3. Click "Reupload Document" button for that specific document
+      4. Select a new file that addresses the rejection reason
+      5. Submit the document for review
+      
+      IMPORTANT: Please resubmit your document as soon as possible to complete your account verification and gain full access to the platform.
+      
+      Need Help?
+      If you have any questions about the rejection reason or need assistance with the resubmission process, please contact our support team.
+      
+      Thank you for your cooperation and patience!
+      
+      © 2026 Farmers Direct. All rights reserved.
+      This is an automated message. Please do not reply to this email.
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Document rejection email sent successfully:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error sending document rejection email:', error);
     throw error;
   }
 };

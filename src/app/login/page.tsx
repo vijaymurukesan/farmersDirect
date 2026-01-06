@@ -1,12 +1,13 @@
 'use client';
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Snackbar from '../components/Snackbar';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -35,6 +36,17 @@ export default function LoginPage() {
       isOpen: false,
     }));
   };
+
+  // Handle forced logout from email links
+  useEffect(() => {
+    const forceLogout = searchParams.get('forceLogout');
+    if (forceLogout === 'true') {
+      // Clear any existing auth data
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('userData');
+      showSnackbar('Please login to continue', 'info');
+    }
+  }, [searchParams]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({

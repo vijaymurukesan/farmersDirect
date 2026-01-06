@@ -99,7 +99,7 @@ export async function PATCH(req: NextRequest) {
       }, { status: 401 });
     }
 
-    const { userId, documentType, action, adminEmail } = await req.json();
+    const { userId, documentType, action, adminEmail, rejectionReason } = await req.json();
 
     if (!userId || !documentType || !action || !adminEmail) {
       return NextResponse.json({
@@ -114,24 +114,39 @@ export async function PATCH(req: NextRequest) {
         message: 'Invalid action. Must be "accept" or "reject"'
       }, { status: 400 });
     }
+    
+    // If rejecting, require rejection reason
+    if (action === 'reject' && !rejectionReason) {
+      return NextResponse.json({
+        success: false,
+        message: 'Rejection reason is required'
+      }, { status: 400 });
+    }
 
     const client = await clientPromise;
     const db = client.db();
 
     // Check if this is Kisan ID verification
     if (documentType === 'kisanId') {
+      // Prepare update fields
+      const updateFields: any = {
+        kisanIdVerified: action === 'accept',
+        kisanIdVerifiedBy: adminEmail,
+        kisanIdVerifiedAt: new Date(),
+        documentStatus: action === 'accept' ? 'verified' : 'rejected',
+        updatedAt: new Date()
+      };
+
+      // Add rejection reason if rejecting
+      if (action === 'reject') {
+        updateFields.kisanIdRejectionReason = rejectionReason;
+        updateFields.kisanIdRejectedAt = new Date();
+      }
+
       // Update Kisan ID verification status
       const result = await db.collection('verification-docs').updateOne(
         { userId: new ObjectId(userId) },
-        {
-          $set: {
-            kisanIdVerified: action === 'accept',
-            kisanIdVerifiedBy: adminEmail,
-            kisanIdVerifiedAt: new Date(),
-            documentStatus: action === 'accept' ? 'verified' : 'rejected',
-            updatedAt: new Date()
-          }
-        }
+        { $set: updateFields }
       );
 
       if (result.matchedCount === 0) {
@@ -153,14 +168,14 @@ export async function PATCH(req: NextRequest) {
         }
       );
 
-      // Send verification success email if user is verified
-      if (action === 'accept') {
-        try {
-          const user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
-          if (user) {
-            const decryptedEmail = decryptEmail(user.email);
-            
-            // Send email notification asynchronously (don't wait for it)
+      // Send email notifications
+      try {
+        const user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+        if (user) {
+          const decryptedEmail = decryptEmail(user.email);
+          
+          if (action === 'accept') {
+            // Send verification success email
             fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/send-verification-success-email`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -170,11 +185,23 @@ export async function PATCH(req: NextRequest) {
                 userType: user.userType
               })
             }).catch(err => console.error('Failed to send verification email:', err));
+          } else {
+            // Send Kisan ID rejection email
+            fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/send-document-rejection-email`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: decryptedEmail,
+                fullName: user.fullName,
+                documentType: 'Kisan Credit Card ID',
+                rejectionReason: rejectionReason
+              })
+            }).catch(err => console.error('Failed to send rejection email:', err));
           }
-        } catch (emailError) {
-          console.error('Error sending verification email:', emailError);
-          // Don't fail the request if email fails
         }
+      } catch (emailError) {
+        console.error('Error sending email:', emailError);
+        // Don't fail the request if email fails
       }
 
       return NextResponse.json({
@@ -184,19 +211,27 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Update the specific document's verification status
+    const updateFields: any = {
+      'documents.$.verified': action === 'accept',
+      'documents.$.verifiedBy': adminEmail,
+      'documents.$.verifiedAt': new Date(),
+      'documents.$.status': action === 'accept' ? 'verified' : 'rejected',
+      updatedAt: new Date()
+    };
+    
+    // Add rejection reason if rejecting
+    if (action === 'reject' && rejectionReason) {
+      updateFields['documents.$.rejectionReason'] = rejectionReason;
+      updateFields['documents.$.rejectedAt'] = new Date();
+    }
+    
     const result = await db.collection('verification-docs').updateOne(
       { 
         userId: new ObjectId(userId),
         'documents.documentType': documentType
       },
       {
-        $set: {
-          'documents.$.verified': action === 'accept',
-          'documents.$.verifiedBy': adminEmail,
-          'documents.$.verifiedAt': new Date(),
-          'documents.$.status': action === 'accept' ? 'verified' : 'rejected',
-          updatedAt: new Date()
-        }
+        $set: updateFields
       }
     );
 
@@ -205,6 +240,31 @@ export async function PATCH(req: NextRequest) {
         success: false,
         message: 'Document not found'
       }, { status: 404 });
+    }
+    
+    // Send rejection email if document was rejected
+    if (action === 'reject') {
+      try {
+        const user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+        if (user) {
+          const decryptedEmail = decryptEmail(user.email);
+          
+          // Send rejection email asynchronously
+          fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/send-document-rejection-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: decryptedEmail,
+              fullName: user.fullName,
+              documentType: documentType,
+              rejectionReason: rejectionReason
+            })
+          }).catch(err => console.error('Failed to send rejection email:', err));
+        }
+      } catch (emailError) {
+        console.error('Error sending rejection email:', emailError);
+        // Don't fail the request if email fails
+      }
     }
 
     // Check if all mandatory documents are verified for this user

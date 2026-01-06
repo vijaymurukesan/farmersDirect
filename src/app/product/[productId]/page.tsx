@@ -1,5 +1,5 @@
 'use client';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import React, { useEffect, useState, useCallback } from 'react';
 import FarmerFilter from '../../components/FarmerFilter';
 import Header from '../../components/Header';
@@ -114,6 +114,7 @@ const getProductVideo = (productName: string) => {
 
 export default function ProductDetailsPage() {
   const params = useParams();
+  const router = useRouter();
   const productId = params?.productId;
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,12 +143,15 @@ export default function ProductDetailsPage() {
   const [currentModalImageIndex, setCurrentModalImageIndex] = useState(0);
   const [modalImageLoading, setModalImageLoading] = useState(false);
   const [isFilterSticky, setIsFilterSticky] = useState(false);
-  
+
   // User authentication state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const [accessDeniedModal, setAccessDeniedModal] = useState(false);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState('');
+  const [revealedContacts, setRevealedContacts] = useState<Set<number>>(
+    new Set()
+  );
 
   const totalImages = 3; // We generate 3 images per product
 
@@ -155,7 +159,7 @@ export default function ProductDetailsPage() {
   useEffect(() => {
     const token = localStorage.getItem('authToken');
     const userDataStr = localStorage.getItem('userData');
-    
+
     if (token && userDataStr) {
       try {
         const user = JSON.parse(userDataStr);
@@ -188,24 +192,113 @@ export default function ProductDetailsPage() {
 
     // Check if user is a farmer
     if (userData.userType !== 'farmer') {
-      setAccessDeniedMessage(
-        'only-farmers'
-      );
+      setAccessDeniedMessage('only-farmers');
       setAccessDeniedModal(true);
       return;
     }
 
     // Check if user is verified
     if (!userData.userVerified) {
-      setAccessDeniedMessage(
-        'not-verified'
-      );
+      setAccessDeniedMessage('not-verified');
       setAccessDeniedModal(true);
       return;
     }
 
     // All checks passed, proceed to registration
     window.location.href = '/register-farmer';
+  };
+
+  // Helper functions for masking contact information
+  const maskEmail = (email: string) => {
+    if (!email) return 'Not provided';
+    const [username, domain] = email.split('@');
+    if (!username || !domain) return email;
+    const maskedUsername =
+      username.charAt(0) + '***' + username.charAt(username.length - 1);
+    return `${maskedUsername}@${domain}`;
+  };
+
+  const maskPhone = (phone: string) => {
+    if (!phone) return 'Not provided';
+    // Mask phone: show first 2 and last 2 digits
+    if (phone.length <= 4) return phone;
+    const masked = phone.slice(0, 2) + '******' + phone.slice(-2);
+    return masked;
+  };
+
+  // Handle reveal contact details
+  const handleRevealContact = (farmerIndex: number) => {
+    // Check if user is logged in
+    if (!isLoggedIn || !userData) {
+      router.push('/login');
+      return;
+    }
+
+    // Check if user is a buyer, admin, or owner
+    if (
+      userData.userType !== 'buyer' &&
+      userData.userType !== 'admin' &&
+      userData.userType !== 'owner'
+    ) {
+      setAccessDeniedMessage('only-buyers');
+      setAccessDeniedModal(true);
+      return;
+    }
+
+    // Check if buyer is verified (admin and owner bypass verification)
+    if (
+      userData.userType === 'buyer' &&
+      (!userData.emailVerified || !userData.userVerified)
+    ) {
+      setAccessDeniedMessage('not-verified-buyer');
+      setAccessDeniedModal(true);
+      return;
+    }
+
+    // Reveal contact for this farmer
+    setRevealedContacts((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(farmerIndex);
+      return newSet;
+    });
+  };
+
+  // Handle map/certificate link clicks
+  const handleProtectedLink = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    url: string
+  ) => {
+    e.preventDefault();
+
+    // Check if user is logged in
+    if (!isLoggedIn || !userData) {
+      router.push('/login');
+      return;
+    }
+
+    // Check if user is a buyer, admin, or owner
+    if (
+      userData.userType !== 'buyer' &&
+      userData.userType !== 'admin' &&
+      userData.userType !== 'owner'
+    ) {
+      setAccessDeniedMessage('only-buyers');
+      setAccessDeniedModal(true);
+      return;
+    }
+
+    // Check if buyer is verified (admin and owner bypass verification)
+    if (
+      userData.userType === 'buyer' &&
+      (!userData.emailVerified || !userData.userVerified)
+    ) {
+      setAccessDeniedMessage('not-verified-buyer');
+      setAccessDeniedModal(true);
+      return;
+    }
+
+    // Open link in new tab if user is authorized
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   // Filter logic
@@ -1130,55 +1223,137 @@ export default function ProductDetailsPage() {
                         padding: '1rem',
                         borderRadius: '8px',
                         border: '1px solid #e9ecef',
-                        minWidth: '200px',
+                        minWidth: '220px',
                       }}
                     >
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.5rem',
-                        }}
-                      >
+                      {revealedContacts.has(idx) ? (
+                        // Show full contact details
                         <div
                           style={{
                             display: 'flex',
-                            alignItems: 'center',
+                            flexDirection: 'column',
                             gap: '0.5rem',
                           }}
                         >
-                          <span style={{ fontSize: '1rem' }}>📞</span>
-                          <a
-                            href={`tel:${farmer.phoneNumber || 'N/A'}`}
+                          <div
                             style={{
-                              color: '#007bff',
-                              textDecoration: 'none',
-                              fontSize: '0.9rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
                             }}
                           >
-                            {farmer.phoneNumber || 'Not provided'}
-                          </a>
+                            <span style={{ fontSize: '1rem' }}>📞</span>
+                            <a
+                              href={`tel:${farmer.phoneNumber || 'N/A'}`}
+                              style={{
+                                color: '#007bff',
+                                textDecoration: 'none',
+                                fontSize: '0.9rem',
+                              }}
+                            >
+                              {farmer.phoneNumber || 'Not provided'}
+                            </a>
+                          </div>
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                            }}
+                          >
+                            <span style={{ fontSize: '1rem' }}>✉️</span>
+                            <a
+                              href={`mailto:${farmer.email || ''}`}
+                              style={{
+                                color: '#007bff',
+                                textDecoration: 'none',
+                                fontSize: '0.9rem',
+                                wordBreak: 'break-word',
+                              }}
+                            >
+                              {farmer.email || 'Not provided'}
+                            </a>
+                          </div>
                         </div>
+                      ) : (
+                        // Show masked contact details with reveal button
                         <div
                           style={{
                             display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
+                            flexDirection: 'column',
+                            gap: '0.75rem',
                           }}
                         >
-                          <span style={{ fontSize: '1rem' }}>✉️</span>
-                          <a
-                            href={`mailto:${farmer.email || ''}`}
+                          <div
                             style={{
-                              color: '#007bff',
-                              textDecoration: 'none',
-                              fontSize: '0.9rem',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.5rem',
                             }}
                           >
-                            {farmer.email || 'Not provided'}
-                          </a>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                              }}
+                            >
+                              <span style={{ fontSize: '1rem' }}>📞</span>
+                              <span
+                                style={{
+                                  color: '#666',
+                                  fontSize: '0.9rem',
+                                }}
+                              >
+                                {maskPhone(farmer.phoneNumber || '')}
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                              }}
+                            >
+                              <span style={{ fontSize: '1rem' }}>✉️</span>
+                              <span
+                                style={{
+                                  color: '#666',
+                                  fontSize: '0.9rem',
+                                  wordBreak: 'break-word',
+                                }}
+                              >
+                                {maskEmail(farmer.email || '')}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleRevealContact(idx)}
+                            style={{
+                              background: '#388e3c',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              padding: '0.5rem 0.75rem',
+                              cursor: 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              transition: 'all 0.3s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = '#2e7d32';
+                              e.currentTarget.style.transform =
+                                'translateY(-1px)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = '#388e3c';
+                              e.currentTarget.style.transform = 'translateY(0)';
+                            }}
+                          >
+                            🔓 View Complete Details
+                          </button>
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     {/* 4. Address */}
@@ -1214,6 +1389,14 @@ export default function ProductDetailsPage() {
                           href={`https://www.google.com/maps?q=${
                             farmer.mapLocation?.lat || 0
                           },${farmer.mapLocation?.lng || 0}`}
+                          onClick={(e) =>
+                            handleProtectedLink(
+                              e,
+                              `https://www.google.com/maps?q=${
+                                farmer.mapLocation?.lat || 0
+                              },${farmer.mapLocation?.lng || 0}`
+                            )
+                          }
                           target='_blank'
                           rel='noopener noreferrer'
                           style={{
@@ -1224,6 +1407,7 @@ export default function ProductDetailsPage() {
                             background: 'white',
                             borderRadius: '4px',
                             border: '1px solid #e0e0e0',
+                            cursor: 'pointer',
                           }}
                         >
                           🗺️ Map
@@ -1231,6 +1415,12 @@ export default function ProductDetailsPage() {
                         {farmer.organicCertificate && (
                           <a
                             href={farmer.organicCertificate}
+                            onClick={(e) =>
+                              handleProtectedLink(
+                                e,
+                                farmer.organicCertificate || ''
+                              )
+                            }
                             target='_blank'
                             rel='noopener noreferrer'
                             style={{
@@ -1241,6 +1431,7 @@ export default function ProductDetailsPage() {
                               background: '#f1f8e9',
                               borderRadius: '4px',
                               border: '1px solid #c8e6c9',
+                              cursor: 'pointer',
                             }}
                           >
                             🌱 Cert
@@ -1996,11 +2187,13 @@ export default function ProductDetailsPage() {
                         lineHeight: '1.6',
                       }}
                     >
-                      This feature is only available for <strong>farmers</strong>.
+                      This feature is only available for{' '}
+                      <strong>farmers</strong>.
                       {userData?.userType && (
                         <>
                           {' '}
-                          You are currently registered as a <strong>{userData.userType}</strong>.
+                          You are currently registered as a{' '}
+                          <strong>{userData.userType}</strong>.
                         </>
                       )}
                     </p>
@@ -2012,7 +2205,66 @@ export default function ProductDetailsPage() {
                         lineHeight: '1.6',
                       }}
                     >
-                      Please register as a farmer to add your products and connect with buyers.
+                      Please register as a farmer to add your products and
+                      connect with buyers.
+                    </p>
+                  </>
+                ) : accessDeniedMessage === 'only-buyers' ? (
+                  <>
+                    <p
+                      style={{
+                        color: '#6d4c41',
+                        fontSize: '1rem',
+                        margin: '0 0 1rem 0',
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      Viewing complete contact details is only available for{' '}
+                      <strong>buyers</strong>.
+                      {userData?.userType && (
+                        <>
+                          {' '}
+                          You are currently registered as a{' '}
+                          <strong>{userData.userType}</strong>.
+                        </>
+                      )}
+                    </p>
+                    <p
+                      style={{
+                        color: '#6d4c41',
+                        fontSize: '1rem',
+                        margin: 0,
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      Please register as a buyer to view full contact
+                      information and connect with farmers.
+                    </p>
+                  </>
+                ) : accessDeniedMessage === 'not-verified-buyer' ? (
+                  <>
+                    <p
+                      style={{
+                        color: '#6d4c41',
+                        fontSize: '1rem',
+                        margin: '0 0 1rem 0',
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      Your account verification is <strong>pending</strong> or{' '}
+                      <strong>incomplete</strong>.
+                    </p>
+                    <p
+                      style={{
+                        color: '#6d4c41',
+                        fontSize: '1rem',
+                        margin: 0,
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      To view farmer contact details, you must complete both{' '}
+                      <strong>email verification</strong> and{' '}
+                      <strong>document verification</strong>.
                     </p>
                   </>
                 ) : (
@@ -2025,7 +2277,8 @@ export default function ProductDetailsPage() {
                         lineHeight: '1.6',
                       }}
                     >
-                      Your account verification is <strong>pending</strong> or <strong>incomplete</strong>.
+                      Your account verification is <strong>pending</strong> or{' '}
+                      <strong>incomplete</strong>.
                     </p>
                     <p
                       style={{
@@ -2035,7 +2288,8 @@ export default function ProductDetailsPage() {
                         lineHeight: '1.6',
                       }}
                     >
-                      Please complete your document verification to access this feature.
+                      Please complete your document verification to access this
+                      feature.
                     </p>
                   </>
                 )}
@@ -2081,6 +2335,40 @@ export default function ProductDetailsPage() {
                       }}
                     >
                       👨‍🌾 Register as Farmer
+                    </button>
+                  </>
+                ) : accessDeniedMessage === 'not-verified-buyer' ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        router.push('/verification');
+                      }}
+                      style={{
+                        background: 'linear-gradient(45deg, #ff9800, #f57c00)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '1rem 1.5rem',
+                        cursor: 'pointer',
+                        fontSize: '1rem',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        transition: 'all 0.3s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow =
+                          '0 6px 16px rgba(255, 152, 0, 0.4)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
+                      ✅ Complete Verification
                     </button>
                   </>
                 ) : (

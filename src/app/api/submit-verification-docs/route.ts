@@ -177,7 +177,36 @@ export async function POST(req: NextRequest) {
         }
       }
       
-      // Build update operations
+      console.log('Documents to update:', documentsToUpdate.length, documentsToUpdate.map(d => d.documentType));
+      console.log('Documents to add:', documentsToAdd.length, documentsToAdd.map(d => d.documentType));
+      
+      // Update existing documents individually using positional operator
+      for (const doc of documentsToUpdate) {
+        const updateResult = await db.collection('verification-docs').updateOne(
+          { 
+            userId: new ObjectId(decoded.userId),
+            'documents.documentType': doc.documentType
+          },
+          { 
+            $set: { 
+              'documents.$.fileName': doc.fileName,
+              'documents.$.fileUrl': doc.fileUrl,
+              'documents.$.fileSize': doc.fileSize,
+              'documents.$.fileType': doc.fileType,
+              'documents.$.status': 'pending', // Reset to pending when reuploaded
+              'documents.$.verified': false, // Reset verification status
+              'documents.$.rejectionReason': null, // Clear rejection reason
+              'documents.$.rejectedAt': null, // Clear rejection timestamp
+              'documents.$.verifiedBy': null, // Clear verifier
+              'documents.$.verifiedAt': null, // Clear verification timestamp
+              'documents.$.submittedAt': new Date() // Update submission time
+            }
+          }
+        );
+        console.log(`Updated document ${doc.documentType}:`, updateResult.modifiedCount);
+      }
+      
+      // Add new documents that don't exist and update metadata
       const updateOps: any = {
         $set: { 
           updatedAt: new Date(),
@@ -192,30 +221,12 @@ export async function POST(req: NextRequest) {
         updateOps.$push = { documents: { $each: documentsToAdd } };
       }
       
-      // Update existing documents by document type
-      for (const doc of documentsToUpdate) {
-        updateOps.$set[`documents.$[elem_${doc.documentType}]`] = doc;
-      }
+      result = await db.collection('verification-docs').updateOne(
+        { userId: new ObjectId(decoded.userId) },
+        updateOps
+      );
       
-      // Build array filters for updating specific documents
-      const arrayFilters: any[] = documentsToUpdate.map(doc => ({
-        [`elem_${doc.documentType}.documentType`]: doc.documentType
-      }));
-      
-      if (arrayFilters.length > 0) {
-        result = await db.collection('verification-docs').updateOne(
-          { userId: new ObjectId(decoded.userId) },
-          updateOps,
-          { arrayFilters }
-        );
-      } else {
-        result = await db.collection('verification-docs').updateOne(
-          { userId: new ObjectId(decoded.userId) },
-          updateOps
-        );
-      }
-      
-      console.log('Updated existing document. Modified count:', result.modifiedCount);
+      console.log('Updated document metadata. Modified count:', result.modifiedCount);
       console.log('Documents updated:', documentsToUpdate.length, 'Documents added:', documentsToAdd.length);
     } else {
       // Create new document with array of documents
