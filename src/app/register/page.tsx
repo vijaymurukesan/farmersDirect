@@ -307,10 +307,10 @@ export default function RegisterPage() {
 
         showSnackbar(successMessage, 'success');
 
-        // Redirect to login after successful registration
+        // Redirect to verification page after successful registration
         setTimeout(() => {
-          router.push('/login');
-        }, 3000); // Increased timeout to allow reading the Farmer ID
+          router.push('/verification');
+        }, 2000); // Redirect to verification to complete email and document verification
       } else {
         // Check if error is due to existing email
         if (

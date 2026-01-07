@@ -45,7 +45,7 @@ export default function VerificationPage() {
   const [kisanId, setKisanId] = useState('');
   const [verificationMethod, setVerificationMethod] = useState<
     'documents' | 'kisan'
-  >('documents');
+  >('kisan');
   const [kisanConsent, setKisanConsent] = useState(false);
   const [verificationLink, setVerificationLink] = useState<string | null>(null);
 
@@ -351,6 +351,24 @@ export default function VerificationPage() {
               const user = JSON.parse(userDataStr);
               user.documentStatus = 'rejected';
               localStorage.setItem('userData', JSON.stringify(user));
+            }
+          } else {
+            // Check if there are any pending mandatory documents
+            const pendingMandatory = docs.filter(
+              (doc: any) =>
+                (doc.status === 'pending' || (!doc.verified && !doc.status)) &&
+                mandatoryDocTypes.includes(doc.documentType)
+            );
+
+            // Only set pending if there are actually mandatory documents pending
+            if (
+              pendingMandatory.length > 0 ||
+              (verificationDoc.kisanId &&
+                verificationDoc.documentStatus === 'pending')
+            ) {
+              setDocumentPending(true);
+            } else {
+              setDocumentPending(false);
             }
           }
         }
