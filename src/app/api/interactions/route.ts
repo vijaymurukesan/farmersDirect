@@ -1,6 +1,8 @@
 import clientPromise from '@/app/db/mongodb';
 import { NextRequest, NextResponse } from 'next/server';
 import { decryptEmail } from '@/app/lib/encryption';
+import { sendInteractionAcceptanceEmail, sendContractSignedEmail } from '@/app/lib/emailService';
+import { generateContractPDF } from '@/app/lib/contractPdfGenerator';
 
 // Helper to safely decrypt email
 const safeDecryptEmail = (email: string): string => {
@@ -216,7 +218,17 @@ export async function PUT(req: NextRequest) {
     const client = await clientPromise;
     const db = client.db();
     
-    const { interactionId, status, farmerResponse, farmerAccepted, buyerAccepted } = await req.json();
+    const { 
+      interactionId, 
+      status, 
+      farmerResponse, 
+      farmerAccepted, 
+      buyerAccepted,
+      generateContract,
+      signContract,
+      signatureType,
+      signatureName
+    } = await req.json();
     
     if (!interactionId) {
       return NextResponse.json({
@@ -245,6 +257,146 @@ export async function PUT(req: NextRequest) {
     
     if (buyerAccepted !== undefined) {
       updateData.buyerAccepted = buyerAccepted;
+    }
+
+    // Check if both parties have now accepted and send email notification
+    const { ObjectId: ObjIdCheck } = require('mongodb');
+    const currentInteraction = await db.collection('interactions').findOne({
+      _id: new ObjIdCheck(interactionId)
+    });
+
+    if (currentInteraction) {
+      const bothAcceptedNow = (
+        (farmerAccepted === true || currentInteraction.farmerAccepted === true) &&
+        (buyerAccepted === true || currentInteraction.buyerAccepted === true)
+      );
+
+      const wasNotBothAcceptedBefore = !(
+        currentInteraction.farmerAccepted === true && 
+        currentInteraction.buyerAccepted === true
+      );
+
+      // Send acceptance email only if this update causes both to be accepted
+      if (bothAcceptedNow && wasNotBothAcceptedBefore) {
+        try {
+          await sendInteractionAcceptanceEmail(
+            currentInteraction.farmer?.email || '',
+            currentInteraction.buyer?.email || '',
+            currentInteraction.farmer?.contactPerson || 'Farmer',
+            currentInteraction.buyer?.fullName || 'Buyer',
+            currentInteraction.product?.productName || 'Product',
+            currentInteraction.interactionType || 'interaction'
+          );
+          console.log('Sent acceptance notification emails to both parties');
+        } catch (emailError) {
+          // Log but don't fail the transaction
+          console.error('Failed to send acceptance emails:', emailError);
+        }
+      }
+    }
+
+    // Handle contract generation
+    if (generateContract && status === 'contract') {
+      updateData.contract = {
+        generatedAt: new Date().toISOString(),
+      };
+    }
+
+    // Handle contract signing
+    if (signContract && signatureName) {
+      const { ObjectId } = require('mongodb');
+      const interaction = await db.collection('interactions').findOne({
+        _id: new ObjectId(interactionId)
+      });
+
+      if (!interaction) {
+        return NextResponse.json({
+          success: false,
+          message: 'Interaction not found'
+        }, { status: 404 });
+      }
+
+      // Update signature based on type
+      const contract = interaction.contract || {};
+      
+      if (signatureType === 'farmer') {
+        contract.farmerSignature = signatureName;
+        contract.farmerSignedAt = new Date().toISOString();
+      } else if (signatureType === 'buyer') {
+        contract.buyerSignature = signatureName;
+        contract.buyerSignedAt = new Date().toISOString();
+      }
+
+      updateData.contract = contract;
+
+      // Check if both have signed - if yes, move to payment status
+      const bothSigned = contract.farmerSignature && contract.buyerSignature;
+      console.log('Contract signing status:', {
+        farmerSignature: contract.farmerSignature,
+        buyerSignature: contract.buyerSignature,
+        bothSigned: bothSigned
+      });
+
+      if (bothSigned) {
+        updateData.status = 'payment';
+
+        // Generate PDF and send contract signed email notification
+        try {
+          console.log('Both parties signed - generating PDF and sending emails...');
+          
+          // Create updated interaction object with complete contract data
+          const interactionWithSignatures = {
+            ...interaction,
+            contract: contract
+          };
+
+          // Generate contract PDF
+          console.log('Generating contract PDF...');
+          const contractPdf = await generateContractPDF(interactionWithSignatures as any);
+          console.log('PDF generated successfully, size:', contractPdf.length, 'bytes');
+          
+          // Send email with PDF attachment
+          console.log('Sending emails to:', {
+            farmer: interaction.farmer?.email,
+            buyer: interaction.buyer?.email
+          });
+          
+          await sendContractSignedEmail(
+            interaction.farmer?.email || '',
+            interaction.buyer?.email || '',
+            interaction.farmer?.contactPerson || 'Farmer',
+            interaction.buyer?.fullName || 'Buyer',
+            interaction.product?.productName || 'Product',
+            contractPdf
+          );
+          console.log('✅ Sent contract signed notification emails with PDF attachment to both parties');
+        } catch (emailError) {
+          // Log but don't fail the transaction
+          console.error('❌ Failed to send contract signed emails:', emailError);
+          console.error('Email error details:', emailError instanceof Error ? emailError.message : 'Unknown error');
+        }
+      }
+
+      const { ObjectId: ObjId } = require('mongodb');
+      const result = await db.collection('interactions').updateOne(
+        { _id: new ObjId(interactionId) },
+        { $set: updateData }
+      );
+
+      if (result.modifiedCount > 0) {
+        return NextResponse.json({
+          success: true,
+          message: bothSigned 
+            ? 'Contract signed successfully! Both parties have signed. Status updated to payment.' 
+            : 'Contract signed successfully!',
+          bothSigned: bothSigned
+        });
+      } else {
+        return NextResponse.json({
+          success: false,
+          message: 'Failed to update contract signature'
+        }, { status: 500 });
+      }
     }
     
     const { ObjectId } = require('mongodb');

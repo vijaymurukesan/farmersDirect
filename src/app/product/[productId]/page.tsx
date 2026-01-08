@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import FarmerFilter from '../../components/FarmerFilter';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import Snackbar from '../../components/Snackbar';
 
 // Define types
 interface Product {
@@ -160,6 +161,25 @@ export default function ProductDetailsPage() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedProduct, setEditedProduct] = useState<Product | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Interaction modal states
+  const [interactionModal, setInteractionModal] = useState<{
+    isOpen: boolean;
+    type: 'shortlist' | 'interest' | 'sample' | null;
+    farmer: Farmer | null;
+  }>({ isOpen: false, type: null, farmer: null });
+  const [interactionFormData, setInteractionFormData] = useState({
+    notes: '',
+    quantity: '',
+    deliveryAddress: '',
+  });
+
+  // Snackbar state
+  const [snackbar, setSnackbar] = useState({
+    isOpen: false,
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+  });
 
   // Total images based on actual product images or default to 1 if none
   const totalImages =
@@ -496,43 +516,42 @@ export default function ProductDetailsPage() {
   };
 
   // Handle Shortlist
-  const handleShortlist = async (farmer: Farmer) => {
+  const handleShortlist = (farmer: Farmer) => {
     if (!isLoggedIn || !userData) {
       router.push('/login');
       return;
     }
+    setInteractionModal({ isOpen: true, type: 'shortlist', farmer });
+  };
 
-    // Find the matching product from farmer's relatedProduct array
+  // Submit Shortlist
+  const submitShortlist = async () => {
+    if (!interactionModal.farmer || !userData) return;
+
+    const farmer = interactionModal.farmer;
     const matchedProduct = (farmer as any).relatedProduct?.find(
       (p: any) => p.productId === productId
     );
 
     const interactionData = {
       interactionType: 'shortlist',
-      farmerId: farmer.farmerId || '',
-      buyerId: userData.buyerId || userData.farmerId || '',
-
-      // Farmer details
+      farmerId: farmer.farmerId || farmer.email,
+      buyerId: userData.buyerId || userData.farmerId || userData.email,
       farmerEmail: farmer.email,
       farmerContactPerson: farmer.contactPerson,
       farmerCompanyName: farmer.companyName,
       farmerPhoneNumber: farmer.phoneNumber,
       farmerAddress: farmer.address,
       farmerMapLocation: farmer.mapLocation,
-
-      // Buyer details
       buyerEmail: userData.email,
       buyerFullName: userData.fullName || userData.contactPerson || '',
       buyerCompanyName: userData.companyName || '',
       buyerPhoneNumber: userData.phoneNumber || '',
-
-      // Product details
       productId: productId,
       productName: product?.title || '',
       productType: product?.type || '',
       productCategory: product?.category || '',
       pricePerUnit: matchedProduct?.PricePerUnit || 0,
-
       buyerNotes: '',
     };
 
@@ -546,61 +565,68 @@ export default function ProductDetailsPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        alert('✅ Farmer shortlisted successfully!');
+        setSnackbar({
+          isOpen: true,
+          message: '✅ Farmer shortlisted successfully!',
+          type: 'success',
+        });
+        setInteractionModal({ isOpen: false, type: null, farmer: null });
       } else {
-        alert(result.message || 'Failed to shortlist farmer');
+        setSnackbar({
+          isOpen: true,
+          message: result.message || 'Failed to shortlist farmer',
+          type: 'error',
+        });
       }
     } catch (error) {
       console.error('Error shortlisting farmer:', error);
-      alert('Error shortlisting farmer. Please try again.');
+      setSnackbar({
+        isOpen: true,
+        message: 'Error shortlisting farmer. Please try again.',
+        type: 'error',
+      });
     }
   };
 
   // Handle Express Interest
-  const handleExpressInterest = async (farmer: Farmer) => {
+  const handleExpressInterest = (farmer: Farmer) => {
     if (!isLoggedIn || !userData) {
       router.push('/login');
       return;
     }
+    setInteractionFormData({ notes: '', quantity: '', deliveryAddress: '' });
+    setInteractionModal({ isOpen: true, type: 'interest', farmer });
+  };
 
-    // Prompt for buyer notes
-    const buyerNotes = prompt(
-      'Enter any additional notes or message for the farmer (optional):'
-    );
-    if (buyerNotes === null) return; // User cancelled
+  // Submit Express Interest
+  const submitExpressInterest = async () => {
+    if (!interactionModal.farmer || !userData) return;
 
-    // Find the matching product from farmer's relatedProduct array
+    const farmer = interactionModal.farmer;
     const matchedProduct = (farmer as any).relatedProduct?.find(
       (p: any) => p.productId === productId
     );
 
     const interactionData = {
       interactionType: 'express_interest',
-      farmerId: farmer.farmerId || '',
-      buyerId: userData.buyerId || userData.farmerId || '',
-
-      // Farmer details
+      farmerId: farmer.farmerId || farmer.email,
+      buyerId: userData.buyerId || userData.farmerId || userData.email,
       farmerEmail: farmer.email,
       farmerContactPerson: farmer.contactPerson,
       farmerCompanyName: farmer.companyName,
       farmerPhoneNumber: farmer.phoneNumber,
       farmerAddress: farmer.address,
       farmerMapLocation: farmer.mapLocation,
-
-      // Buyer details
       buyerEmail: userData.email,
       buyerFullName: userData.fullName || userData.contactPerson || '',
       buyerCompanyName: userData.companyName || '',
       buyerPhoneNumber: userData.phoneNumber || '',
-
-      // Product details
       productId: productId,
       productName: product?.title || '',
       productType: product?.type || '',
       productCategory: product?.category || '',
       pricePerUnit: matchedProduct?.PricePerUnit || 0,
-
-      buyerNotes: buyerNotes.trim(),
+      buyerNotes: interactionFormData.notes.trim(),
     };
 
     try {
@@ -613,71 +639,90 @@ export default function ProductDetailsPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        alert(
-          '✅ Interest expressed successfully! The farmer will be notified.'
-        );
+        setSnackbar({
+          isOpen: true,
+          message:
+            '✅ Interest expressed successfully! The farmer will be notified.',
+          type: 'success',
+        });
+        setInteractionModal({ isOpen: false, type: null, farmer: null });
+        setInteractionFormData({
+          notes: '',
+          quantity: '',
+          deliveryAddress: '',
+        });
       } else {
-        alert(result.message || 'Failed to express interest');
+        setSnackbar({
+          isOpen: true,
+          message: result.message || 'Failed to express interest',
+          type: 'error',
+        });
       }
     } catch (error) {
       console.error('Error expressing interest:', error);
-      alert('Error expressing interest. Please try again.');
+      setSnackbar({
+        isOpen: true,
+        message: 'Error expressing interest. Please try again.',
+        type: 'error',
+      });
     }
   };
 
   // Handle Request Sample
-  const handleRequestSample = async (farmer: Farmer) => {
+  const handleRequestSample = (farmer: Farmer) => {
     if (!isLoggedIn || !userData) {
       router.push('/login');
       return;
     }
+    setInteractionFormData({ notes: '', quantity: '', deliveryAddress: '' });
+    setInteractionModal({ isOpen: true, type: 'sample', farmer });
+  };
 
-    // Prompt for sample details
-    const quantity = prompt('Enter desired sample quantity:');
-    if (!quantity) return;
+  // Submit Request Sample
+  const submitRequestSample = async () => {
+    if (!interactionModal.farmer || !userData) return;
+    if (
+      !interactionFormData.quantity.trim() ||
+      !interactionFormData.deliveryAddress.trim()
+    ) {
+      setSnackbar({
+        isOpen: true,
+        message: 'Please fill in quantity and delivery address',
+        type: 'warning',
+      });
+      return;
+    }
 
-    const deliveryAddress = prompt('Enter delivery address for the sample:');
-    if (!deliveryAddress) return;
-
-    const notes = prompt('Any special requirements or notes (optional):') || '';
-
-    // Find the matching product from farmer's relatedProduct array
+    const farmer = interactionModal.farmer;
     const matchedProduct = (farmer as any).relatedProduct?.find(
       (p: any) => p.productId === productId
     );
 
     const interactionData = {
       interactionType: 'request_sample',
-      farmerId: farmer.farmerId || '',
-      buyerId: userData.buyerId || userData.farmerId || '',
-
-      // Farmer details
+      farmerId: farmer.farmerId || farmer.email,
+      buyerId: userData.buyerId || userData.farmerId || userData.email,
       farmerEmail: farmer.email,
       farmerContactPerson: farmer.contactPerson,
       farmerCompanyName: farmer.companyName,
       farmerPhoneNumber: farmer.phoneNumber,
       farmerAddress: farmer.address,
       farmerMapLocation: farmer.mapLocation,
-
-      // Buyer details
       buyerEmail: userData.email,
       buyerFullName: userData.fullName || userData.contactPerson || '',
       buyerCompanyName: userData.companyName || '',
       buyerPhoneNumber: userData.phoneNumber || '',
-
-      // Product details
       productId: productId,
       productName: product?.title || '',
       productType: product?.type || '',
       productCategory: product?.category || '',
       pricePerUnit: matchedProduct?.PricePerUnit || 0,
-
       sampleDetails: {
-        quantity: quantity.trim(),
-        address: deliveryAddress.trim(),
-        notes: notes.trim(),
+        quantity: interactionFormData.quantity.trim(),
+        address: interactionFormData.deliveryAddress.trim(),
+        notes: interactionFormData.notes.trim(),
       },
-      buyerNotes: notes.trim(),
+      buyerNotes: interactionFormData.notes.trim(),
     };
 
     try {
@@ -690,15 +735,32 @@ export default function ProductDetailsPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        alert(
-          '✅ Sample request sent successfully! The farmer will respond soon.'
-        );
+        setSnackbar({
+          isOpen: true,
+          message:
+            '✅ Sample request sent successfully! The farmer will respond soon.',
+          type: 'success',
+        });
+        setInteractionModal({ isOpen: false, type: null, farmer: null });
+        setInteractionFormData({
+          notes: '',
+          quantity: '',
+          deliveryAddress: '',
+        });
       } else {
-        alert(result.message || 'Failed to request sample');
+        setSnackbar({
+          isOpen: true,
+          message: result.message || 'Failed to request sample',
+          type: 'error',
+        });
       }
     } catch (error) {
       console.error('Error requesting sample:', error);
-      alert('Error requesting sample. Please try again.');
+      setSnackbar({
+        isOpen: true,
+        message: 'Error requesting sample. Please try again.',
+        type: 'error',
+      });
     }
   };
 
@@ -3266,6 +3328,397 @@ export default function ProductDetailsPage() {
             </div>
           </div>
         )}
+
+        {/* Interaction Modal (Shortlist, Express Interest, Request Sample) */}
+        {interactionModal.isOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000,
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() => {
+              setInteractionModal({ isOpen: false, type: null, farmer: null });
+              setInteractionFormData({
+                notes: '',
+                quantity: '',
+                deliveryAddress: '',
+              });
+            }}
+          >
+            <div
+              style={{
+                background: 'white',
+                borderRadius: '16px',
+                padding: '2rem',
+                width: '90%',
+                maxWidth: '500px',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+                animation: 'modalSlideIn 0.3s ease-out',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <style>{`
+                @keyframes modalSlideIn {
+                  from {
+                    opacity: 0;
+                    transform: scale(0.9) translateY(-20px);
+                  }
+                  to {
+                    opacity: 1;
+                    transform: scale(1) translateY(0);
+                  }
+                }
+              `}</style>
+
+              <div
+                style={{
+                  marginBottom: '1.5rem',
+                  borderBottom: '2px solid #e8f5e9',
+                  paddingBottom: '1rem',
+                }}
+              >
+                <h3
+                  style={{
+                    color: '#388e3c',
+                    fontSize: '1.5rem',
+                    fontWeight: 'bold',
+                    margin: '0 0 0.5rem 0',
+                  }}
+                >
+                  {interactionModal.type === 'shortlist' &&
+                    '⭐ Shortlist Farmer'}
+                  {interactionModal.type === 'interest' &&
+                    '💼 Express Interest'}
+                  {interactionModal.type === 'sample' && '📦 Request Sample'}
+                </h3>
+                <p style={{ color: '#6d4c41', margin: 0, fontSize: '0.95rem' }}>
+                  {interactionModal.farmer && (
+                    <>
+                      <strong>{interactionModal.farmer.contactPerson}</strong> -{' '}
+                      {interactionModal.farmer.companyName}
+                    </>
+                  )}
+                </p>
+              </div>
+
+              {/* Shortlist Modal */}
+              {interactionModal.type === 'shortlist' && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <p
+                    style={{
+                      color: '#6d4c41',
+                      fontSize: '1rem',
+                      lineHeight: '1.6',
+                    }}
+                  >
+                    Are you sure you want to shortlist this farmer?
+                  </p>
+                  <div
+                    style={{
+                      background: '#e8f5e9',
+                      padding: '1rem',
+                      borderRadius: '8px',
+                      border: '1px solid #c8e6c9',
+                      marginTop: '1rem',
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: 0,
+                        color: '#2e7d32',
+                        fontSize: '0.9rem',
+                      }}
+                    >
+                      ℹ️ The farmer will appear in your shortlisted farmers list
+                      for easy access.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Express Interest Modal */}
+              {interactionModal.type === 'interest' && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      color: '#388e3c',
+                      fontWeight: 'bold',
+                      marginBottom: '0.5rem',
+                      fontSize: '0.95rem',
+                    }}
+                  >
+                    Message to Farmer (Optional)
+                  </label>
+                  <textarea
+                    value={interactionFormData.notes}
+                    onChange={(e) =>
+                      setInteractionFormData({
+                        ...interactionFormData,
+                        notes: e.target.value,
+                      })
+                    }
+                    placeholder='Enter any additional notes or message for the farmer...'
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: '2px solid #c8e6c9',
+                      borderRadius: '8px',
+                      fontSize: '0.95rem',
+                      color: '#000',
+                      resize: 'vertical',
+                      minHeight: '100px',
+                      transition: 'border-color 0.3s ease',
+                      boxSizing: 'border-box',
+                    }}
+                    onFocus={(e) =>
+                      (e.currentTarget.style.borderColor = '#388e3c')
+                    }
+                    onBlur={(e) =>
+                      (e.currentTarget.style.borderColor = '#c8e6c9')
+                    }
+                  />
+                  <p
+                    style={{
+                      margin: '0.5rem 0 0 0',
+                      color: '#757575',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    The farmer will be notified about your interest.
+                  </p>
+                </div>
+              )}
+
+              {/* Request Sample Modal */}
+              {interactionModal.type === 'sample' && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label
+                      style={{
+                        display: 'block',
+                        color: '#388e3c',
+                        fontWeight: 'bold',
+                        marginBottom: '0.5rem',
+                        fontSize: '0.95rem',
+                      }}
+                    >
+                      Sample Quantity *
+                    </label>
+                    <input
+                      type='text'
+                      value={interactionFormData.quantity}
+                      onChange={(e) =>
+                        setInteractionFormData({
+                          ...interactionFormData,
+                          quantity: e.target.value,
+                        })
+                      }
+                      placeholder='e.g., 100 kg, 10 pieces'
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        border: '2px solid #c8e6c9',
+                        borderRadius: '8px',
+                        fontSize: '0.95rem',
+                        color: '#000',
+                        transition: 'border-color 0.3s ease',
+                        boxSizing: 'border-box',
+                      }}
+                      onFocus={(e) =>
+                        (e.currentTarget.style.borderColor = '#388e3c')
+                      }
+                      onBlur={(e) =>
+                        (e.currentTarget.style.borderColor = '#c8e6c9')
+                      }
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label
+                      style={{
+                        display: 'block',
+                        color: '#388e3c',
+                        fontWeight: 'bold',
+                        marginBottom: '0.5rem',
+                        fontSize: '0.95rem',
+                      }}
+                    >
+                      Delivery Address *
+                    </label>
+                    <textarea
+                      value={interactionFormData.deliveryAddress}
+                      onChange={(e) =>
+                        setInteractionFormData({
+                          ...interactionFormData,
+                          deliveryAddress: e.target.value,
+                        })
+                      }
+                      placeholder='Enter complete delivery address...'
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        border: '2px solid #c8e6c9',
+                        borderRadius: '8px',
+                        fontSize: '0.95rem',
+                        color: '#000',
+                        resize: 'vertical',
+                        minHeight: '80px',
+                        transition: 'border-color 0.3s ease',
+                        boxSizing: 'border-box',
+                      }}
+                      onFocus={(e) =>
+                        (e.currentTarget.style.borderColor = '#388e3c')
+                      }
+                      onBlur={(e) =>
+                        (e.currentTarget.style.borderColor = '#c8e6c9')
+                      }
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label
+                      style={{
+                        display: 'block',
+                        color: '#388e3c',
+                        fontWeight: 'bold',
+                        marginBottom: '0.5rem',
+                        fontSize: '0.95rem',
+                      }}
+                    >
+                      Special Requirements (Optional)
+                    </label>
+                    <textarea
+                      value={interactionFormData.notes}
+                      onChange={(e) =>
+                        setInteractionFormData({
+                          ...interactionFormData,
+                          notes: e.target.value,
+                        })
+                      }
+                      placeholder='Any special requirements or notes...'
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        border: '2px solid #c8e6c9',
+                        borderRadius: '8px',
+                        fontSize: '0.95rem',
+                        color: '#000',
+                        resize: 'vertical',
+                        minHeight: '80px',
+                        transition: 'border-color 0.3s ease',
+                        boxSizing: 'border-box',
+                      }}
+                      onFocus={(e) =>
+                        (e.currentTarget.style.borderColor = '#388e3c')
+                      }
+                      onBlur={(e) =>
+                        (e.currentTarget.style.borderColor = '#c8e6c9')
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Buttons */}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '1rem',
+                  justifyContent: 'flex-end',
+                  paddingTop: '1rem',
+                  borderTop: '1px solid #e0e0e0',
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setInteractionModal({
+                      isOpen: false,
+                      type: null,
+                      farmer: null,
+                    });
+                    setInteractionFormData({
+                      notes: '',
+                      quantity: '',
+                      deliveryAddress: '',
+                    });
+                  }}
+                  style={{
+                    background: '#f5f5f5',
+                    color: '#757575',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = '#e0e0e0')
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = '#f5f5f5')
+                  }
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (interactionModal.type === 'shortlist')
+                      submitShortlist();
+                    else if (interactionModal.type === 'interest')
+                      submitExpressInterest();
+                    else if (interactionModal.type === 'sample')
+                      submitRequestSample();
+                  }}
+                  style={{
+                    background: '#388e3c',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#2e7d32';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#388e3c';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
+                >
+                  {interactionModal.type === 'shortlist' &&
+                    '⭐ Confirm Shortlist'}
+                  {interactionModal.type === 'interest' && '💼 Send Interest'}
+                  {interactionModal.type === 'sample' && '📦 Request Sample'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Snackbar */}
+        <Snackbar
+          message={snackbar.message}
+          type={snackbar.type}
+          isOpen={snackbar.isOpen}
+          onClose={() => setSnackbar({ ...snackbar, isOpen: false })}
+          duration={3000}
+        />
       </div>
       <Footer />
     </div>

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import Snackbar from '../../components/Snackbar';
 
 // Helper function to format email for display
 const formatEmail = (email: string): string => {
@@ -51,6 +52,13 @@ interface Interaction {
   farmerResponse: string;
   farmerAccepted?: boolean;
   buyerAccepted?: boolean;
+  contract?: {
+    generatedAt: string;
+    farmerSignature?: string;
+    farmerSignedAt?: string;
+    buyerSignature?: string;
+    buyerSignedAt?: string;
+  };
   createdAt: string;
   updatedAt: string;
   respondedAt?: string;
@@ -67,12 +75,36 @@ export default function AccountPage() {
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
+  const [interestSubTab, setInterestSubTab] = useState('all');
 
   // Reply state
   const [replyText, setReplyText] = useState<{ [key: string]: string }>({});
   const [replyLoading, setReplyLoading] = useState<{ [key: string]: boolean }>(
     {}
   );
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    interactionId: string;
+  }>({ isOpen: false, interactionId: '' });
+  const [snackbar, setSnackbar] = useState({
+    isOpen: false,
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+  });
+
+  // Contract modal state
+  const [contractModal, setContractModal] = useState<{
+    isOpen: boolean;
+    mode: 'preview' | 'sign' | null;
+    interaction: Interaction | null;
+  }>({ isOpen: false, mode: null, interaction: null });
+  const [signatureName, setSignatureName] = useState('');
+
+  // Contract confirmation modal state
+  const [contractConfirmModal, setContractConfirmModal] = useState<{
+    isOpen: boolean;
+    interactionId: string;
+  }>({ isOpen: false, interactionId: '' });
 
   // Check authentication and ownership
   useEffect(() => {
@@ -85,9 +117,12 @@ export default function AccountPage() {
         setIsLoggedIn(true);
         setUserData(user);
 
-        // Check if this is the user's own account
+        // Check if this is the user's own account OR if user is admin/owner
         const currentUserId = user.farmerId || user.buyerId || user.email;
-        setIsOwner(currentUserId === userId);
+        const isOwnAccount = currentUserId === userId;
+        const isAdminOrOwner =
+          user.userType === 'admin' || user.userType === 'owner';
+        setIsOwner(isOwnAccount || isAdminOrOwner);
       } catch (error) {
         console.error('Error parsing user data:', error);
       }
@@ -135,13 +170,33 @@ export default function AccountPage() {
     if (activeTab === 'all') return true;
     if (activeTab === 'shortlist')
       return interaction.interactionType === 'shortlist';
-    if (activeTab === 'interest')
-      return interaction.interactionType === 'express_interest';
+    if (activeTab === 'interest') {
+      const isInterest = interaction.interactionType === 'express_interest';
+      if (!isInterest) return false;
+
+      // Apply sub-filter for Express Interest
+      if (interestSubTab === 'all') return true;
+      if (interestSubTab === 'pending') return interaction.status === 'pending';
+      if (interestSubTab === 'rejected')
+        return interaction.status === 'rejected';
+      if (interestSubTab === 'accepted') {
+        return (
+          interaction.farmerAccepted &&
+          interaction.buyerAccepted &&
+          interaction.status !== 'contract' &&
+          interaction.status !== 'completed'
+        );
+      }
+      if (interestSubTab === 'contract') {
+        return interaction.status === 'contract';
+      }
+      if (interestSubTab === 'completed') {
+        return interaction.status === 'completed';
+      }
+      return true;
+    }
     if (activeTab === 'sample')
       return interaction.interactionType === 'request_sample';
-    if (activeTab === 'pending') return interaction.status === 'pending';
-    if (activeTab === 'accepted') return interaction.status === 'accepted';
-    if (activeTab === 'rejected') return interaction.status === 'rejected';
     return true;
   });
 
@@ -171,15 +226,27 @@ export default function AccountPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        alert('✅ Reply sent successfully!');
+        setSnackbar({
+          isOpen: true,
+          message: '✅ Reply sent successfully!',
+          type: 'success',
+        });
         setReplyText({ ...replyText, [interactionId]: '' });
         window.location.reload();
       } else {
-        alert(result.message || 'Failed to send reply');
+        setSnackbar({
+          isOpen: true,
+          message: result.message || 'Failed to send reply',
+          type: 'error',
+        });
       }
     } catch (error) {
       console.error('Error sending reply:', error);
-      alert('Error sending reply. Please try again.');
+      setSnackbar({
+        isOpen: true,
+        message: 'Error sending reply. Please try again.',
+        type: 'error',
+      });
     } finally {
       setReplyLoading({ ...replyLoading, [interactionId]: false });
     }
@@ -207,14 +274,26 @@ export default function AccountPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        alert(`✅ You have ${action}ed this interaction!`);
+        setSnackbar({
+          isOpen: true,
+          message: `✅ You have ${action}ed this interaction!`,
+          type: 'success',
+        });
         window.location.reload();
       } else {
-        alert(result.message || `Failed to ${action} interaction`);
+        setSnackbar({
+          isOpen: true,
+          message: result.message || `Failed to ${action} interaction`,
+          type: 'error',
+        });
       }
     } catch (error) {
       console.error(`Error ${action}ing interaction:`, error);
-      alert(`Error ${action}ing interaction. Please try again.`);
+      setSnackbar({
+        isOpen: true,
+        message: `Error ${action}ing interaction. Please try again.`,
+        type: 'error',
+      });
     }
   };
 
@@ -240,25 +319,38 @@ export default function AccountPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        alert(`✅ You have ${action}ed this interaction!`);
+        setSnackbar({
+          isOpen: true,
+          message: `✅ You have ${action}ed this interaction!`,
+          type: 'success',
+        });
         window.location.reload();
       } else {
-        alert(result.message || `Failed to ${action} interaction`);
+        setSnackbar({
+          isOpen: true,
+          message: result.message || `Failed to ${action} interaction`,
+          type: 'error',
+        });
       }
     } catch (error) {
       console.error(`Error ${action}ing interaction:`, error);
-      alert(`Error ${action}ing interaction. Please try again.`);
+      setSnackbar({
+        isOpen: true,
+        message: `Error ${action}ing interaction. Please try again.`,
+        type: 'error',
+      });
     }
   };
 
-  // Handle enter contract
-  const handleEnterContract = async (interactionId: string) => {
-    if (
-      !confirm(
-        'Are you sure you want to enter into a contract? This will mark the interaction as completed.'
-      )
-    )
-      return;
+  // Handle enter contract - show confirmation modal
+  const handleEnterContractConfirm = (interactionId: string) => {
+    setContractConfirmModal({ isOpen: true, interactionId });
+  };
+
+  // Handle enter contract - actual execution after confirmation
+  const handleEnterContract = async () => {
+    const interactionId = contractConfirmModal.interactionId;
+    setContractConfirmModal({ isOpen: false, interactionId: '' });
 
     try {
       const response = await fetch('/api/interactions', {
@@ -266,21 +358,325 @@ export default function AccountPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           interactionId: interactionId,
-          status: 'completed',
+          status: 'contract',
+          generateContract: true,
         }),
       });
 
       const result = await response.json();
 
       if (response.ok && result.success) {
-        alert('✅ Contract established! Interaction marked as completed.');
-        window.location.reload();
+        setSnackbar({
+          isOpen: true,
+          message:
+            '✅ Contract generated! Both parties need to review and sign.',
+          type: 'success',
+        });
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
       } else {
-        alert(result.message || 'Failed to establish contract');
+        setSnackbar({
+          isOpen: true,
+          message: result.message || 'Failed to establish contract',
+          type: 'error',
+        });
       }
     } catch (error) {
       console.error('Error establishing contract:', error);
-      alert('Error establishing contract. Please try again.');
+      setSnackbar({
+        isOpen: true,
+        message: 'Error establishing contract. Please try again.',
+        type: 'error',
+      });
+    }
+  };
+
+  // Generate contract content
+  const generateContractContent = (interaction: Interaction): string => {
+    const today = new Date().toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    return `
+AGRICULTURAL PRODUCE SALE AGREEMENT
+
+This Agreement is made on ${today}
+
+BETWEEN:
+
+PARTY OF THE FIRST PART (SELLER):
+Name: ${interaction.farmer.contactPerson}
+Company: ${interaction.farmer.companyName}
+Address: ${interaction.farmer.address}
+Email: ${interaction.farmer.email}
+Phone: ${interaction.farmer.phoneNumber}
+Farmer ID: ${interaction.farmerid}
+(Hereinafter referred to as "the Seller" which expression shall, unless repugnant to the context or meaning thereof, include its successors and permitted assigns)
+
+AND
+
+PARTY OF THE SECOND PART (BUYER):
+Name: ${interaction.buyer.fullName}
+Company: ${interaction.buyer.companyName || 'Individual'}
+Email: ${interaction.buyer.email}
+Phone: ${interaction.buyer.phoneNumber}
+Buyer ID: ${interaction.buyerid}
+(Hereinafter referred to as "the Buyer" which expression shall, unless repugnant to the context or meaning thereof, include its successors and permitted assigns)
+
+WHEREAS:
+A. The Seller is engaged in the business of agricultural production and is the lawful producer/owner of agricultural produce.
+B. The Buyer is desirous of purchasing agricultural produce from the Seller.
+C. Both parties have agreed to enter into this Agreement on mutually acceptable terms and conditions as set forth herein.
+
+NOW THIS AGREEMENT WITNESSETH AS FOLLOWS:
+
+1. PRODUCT DETAILS
+   Product Name: ${interaction.product.productName}
+   Product Type: ${interaction.product.type}
+   Category: ${interaction.product.category}
+   Price per Unit: ₹${interaction.product.pricePerUnit}
+   ${
+     interaction.sampleDetails
+       ? `Quantity: ${interaction.sampleDetails.quantity}`
+       : ''
+   }
+
+2. TERMS AND CONDITIONS
+
+2.1 QUALITY STANDARDS
+The Seller warrants that the produce shall conform to the agreed specifications and quality standards as per Food Safety and Standards Act, 2006 and Agricultural Produce Market Committee Act applicable in the respective state.
+
+2.2 DELIVERY
+${
+  interaction.sampleDetails
+    ? `Delivery Address: ${interaction.sampleDetails.address}`
+    : 'Delivery terms to be mutually agreed upon'
+}
+The Seller shall deliver the produce within the agreed timeline unless prevented by force majeure events.
+
+2.3 PAYMENT TERMS
+Payment shall be made as per the terms agreed upon completion of delivery and quality verification. Payment mode shall comply with the provisions of the Indian Contract Act, 1872.
+
+2.4 RISK AND TITLE
+Risk and title in the goods shall pass to the Buyer upon delivery and acceptance at the specified delivery location.
+
+2.5 WARRANTIES
+The Seller warrants that:
+a) The produce is grown/produced by the Seller and is free from any encumbrances
+b) The produce meets all applicable food safety and quality standards
+c) The Seller has all necessary licenses and permits for cultivation and sale
+
+2.6 INSPECTION AND ACCEPTANCE
+The Buyer shall have the right to inspect the produce upon delivery. Any quality issues must be reported within 24 hours of delivery.
+
+2.7 DISPUTE RESOLUTION
+Any disputes arising out of or in connection with this Agreement shall be resolved through:
+a) Good faith negotiations between the parties
+b) If unresolved, through mediation
+c) If mediation fails, through arbitration as per the Arbitration and Conciliation Act, 1996
+d) The arbitration shall be conducted in English language and the seat of arbitration shall be [Location]
+e) The award of the arbitrator shall be final and binding on both parties
+
+2.8 JURISDICTION
+This Agreement shall be governed by and construed in accordance with the laws of India. The courts at [Location] shall have exclusive jurisdiction over any disputes.
+
+2.9 FORCE MAJEURE
+Neither party shall be liable for any failure or delay in performing their obligations under this Agreement due to force majeure events including but not limited to acts of God, natural disasters, war, governmental actions, epidemics, or any other events beyond reasonable control.
+
+2.10 TERMINATION
+Either party may terminate this Agreement by providing written notice if the other party:
+a) Commits a material breach and fails to remedy within 15 days of written notice
+b) Becomes insolvent or enters into bankruptcy proceedings
+
+2.11 CONFIDENTIALITY
+Both parties agree to maintain confidentiality of all business information exchanged during the course of this transaction.
+
+2.12 ENTIRE AGREEMENT
+This Agreement constitutes the entire agreement between the parties and supersedes all prior negotiations, representations, and agreements.
+
+3. COMMUNICATION HISTORY
+
+Initial Contact Date: ${new Date(interaction.createdAt).toLocaleDateString(
+      'en-IN'
+    )}
+Interaction Type: ${
+      interaction.interactionType === 'express_interest'
+        ? 'Express Interest'
+        : interaction.interactionType === 'request_sample'
+        ? 'Sample Request'
+        : 'Shortlist'
+    }
+
+${
+  interaction.buyerNotes
+    ? `Buyer's Initial Notes:\n${interaction.buyerNotes}\n`
+    : ''
+}
+${
+  interaction.farmerResponse
+    ? `Seller's Response:\n${interaction.farmerResponse}\n`
+    : ''
+}
+${
+  interaction.sampleDetails?.notes
+    ? `Additional Notes:\n${interaction.sampleDetails.notes}\n`
+    : ''
+}
+
+Last Updated: ${new Date(interaction.updatedAt).toLocaleDateString('en-IN')}
+
+4. DECLARATIONS
+
+The parties hereby declare that:
+a) They have read and understood all terms and conditions of this Agreement
+b) They enter into this Agreement voluntarily and without any coercion
+c) All information provided is true and accurate to the best of their knowledge
+d) They have the legal capacity and authority to enter into this Agreement
+
+5. SIGNATURES
+
+This Agreement is executed electronically with digital signatures of both parties.
+
+SELLER'S SIGNATURE:
+${
+  interaction.contract?.farmerSignature
+    ? `Signed by: ${interaction.contract.farmerSignature}\nDate: ${new Date(
+        interaction.contract.farmerSignedAt!
+      ).toLocaleDateString('en-IN')}`
+    : '[Pending Signature]'
+}
+
+BUYER'S SIGNATURE:
+${
+  interaction.contract?.buyerSignature
+    ? `Signed by: ${interaction.contract.buyerSignature}\nDate: ${new Date(
+        interaction.contract.buyerSignedAt!
+      ).toLocaleDateString('en-IN')}`
+    : '[Pending Signature]'
+}
+
+---END OF AGREEMENT---
+
+Note: This is a legally binding electronic document. By signing this agreement, both parties acknowledge their acceptance of all terms and conditions stated herein.
+    `.trim();
+  };
+
+  // Handle preview contract
+  const handlePreviewContract = (interaction: Interaction) => {
+    setContractModal({ isOpen: true, mode: 'preview', interaction });
+  };
+
+  // Handle sign contract
+  const handleSignContract = (interaction: Interaction) => {
+    setSignatureName('');
+    setContractModal({ isOpen: true, mode: 'sign', interaction });
+  };
+
+  // Submit signature
+  const submitSignature = async () => {
+    if (!signatureName.trim()) {
+      setSnackbar({
+        isOpen: true,
+        message: 'Please enter your name to sign the contract',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (!contractModal.interaction) return;
+
+    const isFarmer = userData?.userType === 'farmer';
+    const interactionId = contractModal.interaction._id;
+
+    try {
+      const response = await fetch('/api/interactions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interactionId: interactionId,
+          signContract: true,
+          signatureType: isFarmer ? 'farmer' : 'buyer',
+          signatureName: signatureName.trim(),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setSnackbar({
+          isOpen: true,
+          message: result.bothSigned
+            ? '✅ Contract fully signed! Moving to payment phase.'
+            : '✅ Contract signed successfully! Waiting for other party to sign.',
+          type: 'success',
+        });
+        setContractModal({ isOpen: false, mode: null, interaction: null });
+        setSignatureName('');
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        setSnackbar({
+          isOpen: true,
+          message: result.message || 'Failed to sign contract',
+          type: 'error',
+        });
+      }
+    } catch (error) {
+      console.error('Error signing contract:', error);
+      setSnackbar({
+        isOpen: true,
+        message: 'Error signing contract. Please try again.',
+        type: 'error',
+      });
+    }
+  };
+
+  // Handle delete interaction
+  const handleDeleteInteraction = async (interactionId: string) => {
+    setDeleteModal({ isOpen: true, interactionId });
+  };
+
+  // Confirm delete interaction
+  const confirmDeleteInteraction = async () => {
+    const interactionId = deleteModal.interactionId;
+    setDeleteModal({ isOpen: false, interactionId: '' });
+
+    try {
+      const response = await fetch('/api/interactions', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interactionId }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setSnackbar({
+          isOpen: true,
+          message: '✅ Interaction deleted successfully!',
+          type: 'success',
+        });
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        setSnackbar({
+          isOpen: true,
+          message: result.message || 'Failed to delete interaction',
+          type: 'error',
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting interaction:', error);
+      setSnackbar({
+        isOpen: true,
+        message: 'Error deleting interaction. Please try again.',
+        type: 'error',
+      });
     }
   };
 
@@ -302,6 +698,8 @@ export default function AccountPage() {
       pending: { bg: '#fff3e0', color: '#e65100', text: '⏳ Pending' },
       accepted: { bg: '#e8f5e9', color: '#2e7d32', text: '✅ Accepted' },
       rejected: { bg: '#ffebee', color: '#c62828', text: '❌ Rejected' },
+      contract: { bg: '#fff9c4', color: '#f57f17', text: '📝 Contract' },
+      payment: { bg: '#e1f5fe', color: '#01579b', text: '💳 Payment' },
       completed: { bg: '#e3f2fd', color: '#1565c0', text: '✔️ Completed' },
     };
     const style = styles[status as keyof typeof styles] || styles.pending;
@@ -409,7 +807,14 @@ export default function AccountPage() {
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>
+              <div
+                style={{
+                  fontSize: '2rem',
+                  marginBottom: '0.5rem',
+                  color: '#2e7d32',
+                  fontWeight: 'bold',
+                }}
+              >
                 {interactions.length}
               </div>
               <div style={{ color: '#6d4c41', fontSize: '0.9rem' }}>
@@ -424,7 +829,14 @@ export default function AccountPage() {
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>
+              <div
+                style={{
+                  fontSize: '2rem',
+                  marginBottom: '0.5rem',
+                  color: '#e65100',
+                  fontWeight: 'bold',
+                }}
+              >
                 {interactions.filter((i) => i.status === 'pending').length}
               </div>
               <div style={{ color: '#6d4c41', fontSize: '0.9rem' }}>
@@ -439,7 +851,14 @@ export default function AccountPage() {
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>
+              <div
+                style={{
+                  fontSize: '2rem',
+                  marginBottom: '0.5rem',
+                  color: '#1565c0',
+                  fontWeight: 'bold',
+                }}
+              >
                 {interactions.filter((i) => i.status === 'accepted').length}
               </div>
               <div style={{ color: '#6d4c41', fontSize: '0.9rem' }}>
@@ -454,7 +873,14 @@ export default function AccountPage() {
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>
+              <div
+                style={{
+                  fontSize: '2rem',
+                  marginBottom: '0.5rem',
+                  color: '#c2185b',
+                  fontWeight: 'bold',
+                }}
+              >
                 {interactions.filter((i) => i.status === 'completed').length}
               </div>
               <div style={{ color: '#6d4c41', fontSize: '0.9rem' }}>
@@ -515,13 +941,15 @@ export default function AccountPage() {
                 { id: 'shortlist', label: 'Shortlisted', icon: '⭐' },
                 { id: 'interest', label: 'Expressed Interest', icon: '💼' },
                 { id: 'sample', label: 'Sample Requests', icon: '📦' },
-                { id: 'pending', label: 'Pending', icon: '⏳' },
-                { id: 'accepted', label: 'Accepted', icon: '✅' },
-                { id: 'rejected', label: 'Rejected', icon: '❌' },
               ].map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    if (tab.id === 'interest') {
+                      setInterestSubTab('all');
+                    }
+                  }}
                   style={{
                     background: activeTab === tab.id ? '#388e3c' : '#f1f8e9',
                     color: activeTab === tab.id ? 'white' : '#388e3c',
@@ -548,6 +976,78 @@ export default function AccountPage() {
                 </button>
               ))}
             </div>
+
+            {/* Express Interest Sub-Tabs */}
+            {activeTab === 'interest' && (
+              <div
+                style={{
+                  background: '#e8f5e9',
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  marginBottom: '1rem',
+                  border: '1px solid #c8e6c9',
+                }}
+              >
+                <div
+                  style={{
+                    marginBottom: '0.5rem',
+                    color: '#388e3c',
+                    fontWeight: 'bold',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  📊 Filter by Status:
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '0.5rem',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  {[
+                    { id: 'all', label: 'All', icon: '📋' },
+                    { id: 'pending', label: 'Pending', icon: '⏳' },
+                    { id: 'rejected', label: 'Rejected', icon: '❌' },
+                    { id: 'accepted', label: 'Accepted', icon: '✅' },
+                    { id: 'contract', label: 'Contract', icon: '📝' },
+                    { id: 'payment', label: 'Payment', icon: '💳' },
+                    { id: 'completed', label: 'Completed', icon: '✔️' },
+                  ].map((subTab) => (
+                    <button
+                      key={subTab.id}
+                      onClick={() => setInterestSubTab(subTab.id)}
+                      style={{
+                        background:
+                          interestSubTab === subTab.id ? '#2e7d32' : 'white',
+                        color:
+                          interestSubTab === subTab.id ? 'white' : '#388e3c',
+                        border: '1px solid #c8e6c9',
+                        borderRadius: '6px',
+                        padding: '0.4rem 0.8rem',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight:
+                          interestSubTab === subTab.id ? 'bold' : 'normal',
+                        transition: 'all 0.3s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (interestSubTab !== subTab.id) {
+                          e.currentTarget.style.background = '#f1f8e9';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (interestSubTab !== subTab.id) {
+                          e.currentTarget.style.background = 'white';
+                        }
+                      }}
+                    >
+                      {subTab.icon} {subTab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Interactions List */}
             {loading ? (
@@ -612,7 +1112,7 @@ export default function AccountPage() {
                         marginBottom: '1rem',
                       }}
                     >
-                      <div>
+                      <div style={{ flex: 1 }}>
                         <h3
                           style={{
                             color: '#388e3c',
@@ -628,7 +1128,54 @@ export default function AccountPage() {
                           {interaction.product.type})
                         </p>
                       </div>
-                      {getStatusBadge(interaction.status)}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                        }}
+                      >
+                        {getStatusBadge(interaction.status)}
+                        {/* Delete button - only for admin/owner */}
+                        {(userData?.userType === 'admin' ||
+                          userData?.userType === 'owner') && (
+                          <button
+                            onClick={() =>
+                              handleDeleteInteraction(interaction._id)
+                            }
+                            title='Delete this interaction'
+                            style={{
+                              background: '#e0e0e0',
+                              color: '#666',
+                              border: 'none',
+                              borderRadius: '50%',
+                              width: '36px',
+                              height: '36px',
+                              cursor: 'pointer',
+                              fontSize: '1.1rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 0.3s ease',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = '#bdbdbd';
+                              e.currentTarget.style.transform = 'scale(1.1)';
+                              e.currentTarget.style.boxShadow =
+                                '0 4px 8px rgba(0,0,0,0.2)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = '#e0e0e0';
+                              e.currentTarget.style.transform = 'scale(1)';
+                              e.currentTarget.style.boxShadow =
+                                '0 2px 4px rgba(0,0,0,0.1)';
+                            }}
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div
@@ -915,86 +1462,91 @@ export default function AccountPage() {
                       </div>
                     )}
 
-                    {/* Reply Input - Only for farmers */}
-                    {userId.startsWith('FID') && isOwner && (
-                      <div
-                        style={{
-                          marginTop: '1rem',
-                          padding: '1rem',
-                          background: '#f5f5f5',
-                          borderRadius: '8px',
-                          border: '1px solid #e0e0e0',
-                        }}
-                      >
-                        <textarea
-                          placeholder='Type your reply to the buyer...'
-                          value={replyText[interaction._id] || ''}
-                          onChange={(e) =>
-                            setReplyText({
-                              ...replyText,
-                              [interaction._id]: e.target.value,
-                            })
-                          }
-                          style={{
-                            width: '100%',
-                            minHeight: '80px',
-                            padding: '0.75rem',
-                            border: '1px solid #c8e6c9',
-                            borderRadius: '8px',
-                            fontSize: '0.9rem',
-                            resize: 'vertical',
-                            fontFamily: 'Arial, sans-serif',
-                            marginBottom: '0.5rem',
-                          }}
-                        />
+                    {/* Reply Input - Only for farmers and only before acceptance */}
+                    {userId.startsWith('FID') &&
+                      isOwner &&
+                      interaction.status !== 'accepted' &&
+                      interaction.status !== 'contract' &&
+                      interaction.status !== 'payment' && (
                         <div
                           style={{
-                            display: 'flex',
-                            justifyContent: 'flex-end',
-                            gap: '0.5rem',
+                            marginTop: '1rem',
+                            padding: '1rem',
+                            background: '#f5f5f5',
+                            borderRadius: '8px',
+                            border: '1px solid #e0e0e0',
                           }}
                         >
-                          <button
-                            onClick={() =>
-                              handleReplySubmit(
-                                interaction._id,
-                                interaction.farmerResponse
-                              )
-                            }
-                            disabled={
-                              !replyText[interaction._id] ||
-                              !replyText[interaction._id].trim() ||
-                              replyLoading[interaction._id]
+                          <textarea
+                            placeholder='Type your reply to the buyer...'
+                            value={replyText[interaction._id] || ''}
+                            onChange={(e) =>
+                              setReplyText({
+                                ...replyText,
+                                [interaction._id]: e.target.value,
+                              })
                             }
                             style={{
-                              background:
-                                !replyText[interaction._id] ||
-                                !replyText[interaction._id].trim() ||
-                                replyLoading[interaction._id]
-                                  ? '#ccc'
-                                  : '#388e3c',
-                              color: 'white',
-                              border: 'none',
+                              width: '100%',
+                              minHeight: '80px',
+                              padding: '0.75rem',
+                              border: '1px solid #c8e6c9',
                               borderRadius: '8px',
-                              padding: '0.5rem 1.5rem',
-                              cursor:
-                                !replyText[interaction._id] ||
-                                !replyText[interaction._id].trim() ||
-                                replyLoading[interaction._id]
-                                  ? 'not-allowed'
-                                  : 'pointer',
                               fontSize: '0.9rem',
-                              fontWeight: 'bold',
-                              transition: 'all 0.3s ease',
+                              resize: 'vertical',
+                              fontFamily: 'Arial, sans-serif',
+                              marginBottom: '0.5rem',
+                              color: '#1a1a1a',
+                            }}
+                          />
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'flex-end',
+                              gap: '0.5rem',
                             }}
                           >
-                            {replyLoading[interaction._id]
-                              ? '⏳ Sending...'
-                              : '📤 Send Reply'}
-                          </button>
+                            <button
+                              onClick={() =>
+                                handleReplySubmit(
+                                  interaction._id,
+                                  interaction.farmerResponse
+                                )
+                              }
+                              disabled={
+                                !replyText[interaction._id] ||
+                                !replyText[interaction._id].trim() ||
+                                replyLoading[interaction._id]
+                              }
+                              style={{
+                                background:
+                                  !replyText[interaction._id] ||
+                                  !replyText[interaction._id].trim() ||
+                                  replyLoading[interaction._id]
+                                    ? '#ccc'
+                                    : '#388e3c',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '0.5rem 1.5rem',
+                                cursor:
+                                  !replyText[interaction._id] ||
+                                  !replyText[interaction._id].trim() ||
+                                  replyLoading[interaction._id]
+                                    ? 'not-allowed'
+                                    : 'pointer',
+                                fontSize: '0.9rem',
+                                fontWeight: 'bold',
+                                transition: 'all 0.3s ease',
+                              }}
+                            >
+                              {replyLoading[interaction._id]
+                                ? '⏳ Sending...'
+                                : '📤 Send Reply'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {/* Action Buttons Section */}
                     <div
@@ -1048,14 +1600,15 @@ export default function AccountPage() {
                             style={{
                               fontSize: '0.9rem',
                               fontWeight: 'bold',
-                              color: interaction.farmerAccepted
-                                ? '#2e7d32'
-                                : interaction.farmerAccepted === false
-                                ? '#c62828'
-                                : '#757575',
+                              color:
+                                interaction.farmerAccepted === true
+                                  ? '#2e7d32'
+                                  : interaction.farmerAccepted === false
+                                  ? '#c62828'
+                                  : '#757575',
                             }}
                           >
-                            {interaction.farmerAccepted
+                            {interaction.farmerAccepted === true
                               ? '✅ Accepted'
                               : interaction.farmerAccepted === false
                               ? '❌ Rejected'
@@ -1085,14 +1638,15 @@ export default function AccountPage() {
                             style={{
                               fontSize: '0.9rem',
                               fontWeight: 'bold',
-                              color: interaction.buyerAccepted
-                                ? '#2e7d32'
-                                : interaction.buyerAccepted === false
-                                ? '#c62828'
-                                : '#757575',
+                              color:
+                                interaction.buyerAccepted === true
+                                  ? '#2e7d32'
+                                  : interaction.buyerAccepted === false
+                                  ? '#c62828'
+                                  : '#757575',
                             }}
                           >
-                            {interaction.buyerAccepted
+                            {interaction.buyerAccepted === true
                               ? '✅ Accepted'
                               : interaction.buyerAccepted === false
                               ? '❌ Rejected'
@@ -1105,6 +1659,7 @@ export default function AccountPage() {
                       {userId.startsWith('FID') &&
                         isOwner &&
                         interaction.status !== 'completed' &&
+                        interaction.status !== 'contract' &&
                         interaction.status !== 'rejected' &&
                         interaction.farmerAccepted === undefined && (
                           <div
@@ -1171,6 +1726,7 @@ export default function AccountPage() {
                       {userId.startsWith('BID') &&
                         isOwner &&
                         interaction.status !== 'completed' &&
+                        interaction.status !== 'contract' &&
                         interaction.status !== 'rejected' &&
                         interaction.buyerAccepted === undefined && (
                           <div
@@ -1237,6 +1793,8 @@ export default function AccountPage() {
                       {interaction.farmerAccepted &&
                         interaction.buyerAccepted &&
                         interaction.status !== 'completed' &&
+                        interaction.status !== 'contract' &&
+                        interaction.status !== 'payment' &&
                         isOwner && (
                           <div
                             style={{
@@ -1260,7 +1818,7 @@ export default function AccountPage() {
                             </div>
                             <button
                               onClick={() =>
-                                handleEnterContract(interaction._id)
+                                handleEnterContractConfirm(interaction._id)
                               }
                               style={{
                                 width: '100%',
@@ -1292,6 +1850,281 @@ export default function AccountPage() {
                             >
                               📝 Enter into Contract
                             </button>
+                          </div>
+                        )}
+
+                      {/* Contract Phase - Preview and Sign Buttons */}
+                      {(interaction.status === 'contract' ||
+                        interaction.status === 'payment') &&
+                        isOwner && (
+                          <div
+                            style={{
+                              marginTop: '1rem',
+                              padding: '1.5rem',
+                              background:
+                                'linear-gradient(135deg, #fff9c4 0%, #fff59d 100%)',
+                              borderRadius: '12px',
+                              border: '2px solid #f57f17',
+                            }}
+                          >
+                            <div
+                              style={{
+                                textAlign: 'center',
+                                marginBottom: '1rem',
+                              }}
+                            >
+                              <h4
+                                style={{
+                                  color: '#f57f17',
+                                  margin: '0 0 0.5rem 0',
+                                  fontSize: '1.1rem',
+                                }}
+                              >
+                                📋 Legal Contract Generated
+                              </h4>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  color: '#6d4c41',
+                                  fontSize: '0.9rem',
+                                }}
+                              >
+                                Review and sign the contract to proceed to
+                                payment
+                              </p>
+                            </div>
+
+                            {/* Contract Signature Status */}
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr',
+                                gap: '1rem',
+                                marginBottom: '1rem',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  padding: '1rem',
+                                  background: interaction.contract
+                                    ?.farmerSignature
+                                    ? '#e8f5e9'
+                                    : 'white',
+                                  borderRadius: '8px',
+                                  border: `2px solid ${
+                                    interaction.contract?.farmerSignature
+                                      ? '#4caf50'
+                                      : '#e0e0e0'
+                                  }`,
+                                  textAlign: 'center',
+                                }}
+                              >
+                                <div style={{ fontSize: '2rem' }}>
+                                  {interaction.contract?.farmerSignature
+                                    ? '✅'
+                                    : '⏳'}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '0.85rem',
+                                    fontWeight: 'bold',
+                                    color: interaction.contract?.farmerSignature
+                                      ? '#2e7d32'
+                                      : '#757575',
+                                    marginTop: '0.5rem',
+                                  }}
+                                >
+                                  Farmer Signature
+                                </div>
+                                {interaction.contract?.farmerSignature && (
+                                  <div
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      color: '#666',
+                                      marginTop: '0.25rem',
+                                    }}
+                                  >
+                                    Signed by:{' '}
+                                    {interaction.contract.farmerSignature}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div
+                                style={{
+                                  padding: '1rem',
+                                  background: interaction.contract
+                                    ?.buyerSignature
+                                    ? '#e8f5e9'
+                                    : 'white',
+                                  borderRadius: '8px',
+                                  border: `2px solid ${
+                                    interaction.contract?.buyerSignature
+                                      ? '#4caf50'
+                                      : '#e0e0e0'
+                                  }`,
+                                  textAlign: 'center',
+                                }}
+                              >
+                                <div style={{ fontSize: '2rem' }}>
+                                  {interaction.contract?.buyerSignature
+                                    ? '✅'
+                                    : '⏳'}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '0.85rem',
+                                    fontWeight: 'bold',
+                                    color: interaction.contract?.buyerSignature
+                                      ? '#2e7d32'
+                                      : '#757575',
+                                    marginTop: '0.5rem',
+                                  }}
+                                >
+                                  Buyer Signature
+                                </div>
+                                {interaction.contract?.buyerSignature && (
+                                  <div
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      color: '#666',
+                                      marginTop: '0.25rem',
+                                    }}
+                                  >
+                                    Signed by:{' '}
+                                    {interaction.contract.buyerSignature}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div
+                              style={{
+                                display: 'flex',
+                                gap: '0.75rem',
+                                flexWrap: 'wrap',
+                              }}
+                            >
+                              <button
+                                onClick={() =>
+                                  handlePreviewContract(interaction)
+                                }
+                                style={{
+                                  flex: 1,
+                                  minWidth: '180px',
+                                  background: '#2196f3',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  padding: '1rem',
+                                  cursor: 'pointer',
+                                  fontSize: '0.95rem',
+                                  fontWeight: 'bold',
+                                  transition: 'all 0.3s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = '#1976d2';
+                                  e.currentTarget.style.transform =
+                                    'translateY(-2px)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = '#2196f3';
+                                  e.currentTarget.style.transform =
+                                    'translateY(0)';
+                                }}
+                              >
+                                👁️ Preview Contract
+                              </button>
+
+                              {/* Sign Button - Only show if current user hasn't signed */}
+                              {((userId.startsWith('FID') &&
+                                !interaction.contract?.farmerSignature) ||
+                                (userId.startsWith('BID') &&
+                                  !interaction.contract?.buyerSignature)) && (
+                                <button
+                                  onClick={() =>
+                                    handleSignContract(interaction)
+                                  }
+                                  style={{
+                                    flex: 1,
+                                    minWidth: '180px',
+                                    background: '#4caf50',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    padding: '1rem',
+                                    cursor: 'pointer',
+                                    fontSize: '0.95rem',
+                                    fontWeight: 'bold',
+                                    transition: 'all 0.3s ease',
+                                    boxShadow:
+                                      '0 4px 12px rgba(76, 175, 80, 0.3)',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background =
+                                      '#388e3c';
+                                    e.currentTarget.style.transform =
+                                      'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow =
+                                      '0 6px 16px rgba(76, 175, 80, 0.4)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background =
+                                      '#4caf50';
+                                    e.currentTarget.style.transform =
+                                      'translateY(0)';
+                                    e.currentTarget.style.boxShadow =
+                                      '0 4px 12px rgba(76, 175, 80, 0.3)';
+                                  }}
+                                >
+                                  ✍️ Sign Contract
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Both Signed - Ready for Payment */}
+                            {interaction.contract?.farmerSignature &&
+                              interaction.contract?.buyerSignature && (
+                                <div
+                                  style={{
+                                    marginTop: '1rem',
+                                    padding: '1rem',
+                                    background: '#e8f5e9',
+                                    borderRadius: '8px',
+                                    border: '2px solid #4caf50',
+                                    textAlign: 'center',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontSize: '1.5rem',
+                                      marginBottom: '0.5rem',
+                                    }}
+                                  >
+                                    🎉
+                                  </div>
+                                  <div
+                                    style={{
+                                      color: '#2e7d32',
+                                      fontWeight: 'bold',
+                                      fontSize: '1rem',
+                                      marginBottom: '0.25rem',
+                                    }}
+                                  >
+                                    Contract Fully Signed!
+                                  </div>
+                                  <div
+                                    style={{
+                                      color: '#6d4c41',
+                                      fontSize: '0.85rem',
+                                    }}
+                                  >
+                                    Status has been updated to Payment. Proceed
+                                    with payment processing.
+                                  </div>
+                                </div>
+                              )}
                           </div>
                         )}
                     </div>
@@ -1342,6 +2175,545 @@ export default function AccountPage() {
             </p>
           </div>
         )}
+
+        {/* Delete Confirmation Modal */}
+        {deleteModal.isOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10000,
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() => setDeleteModal({ isOpen: false, interactionId: '' })}
+          >
+            <div
+              style={{
+                background: 'white',
+                borderRadius: '16px',
+                padding: '2rem',
+                maxWidth: '500px',
+                width: '90%',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🗑️</div>
+                <h2 style={{ color: '#d32f2f', margin: '0 0 0.5rem 0' }}>
+                  Delete Interaction
+                </h2>
+                <p style={{ color: '#666', margin: 0 }}>
+                  Are you sure you want to delete this interaction? This action
+                  cannot be undone.
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '1rem',
+                  justifyContent: 'center',
+                }}
+              >
+                <button
+                  onClick={() =>
+                    setDeleteModal({ isOpen: false, interactionId: '' })
+                  }
+                  style={{
+                    background: '#f5f5f5',
+                    color: '#666',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#e0e0e0';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#f5f5f5';
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteInteraction}
+                  style={{
+                    background: '#d32f2f',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#b71c1c';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#d32f2f';
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Contract Entry Confirmation Modal */}
+        {contractConfirmModal.isOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10000,
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() =>
+              setContractConfirmModal({ isOpen: false, interactionId: '' })
+            }
+          >
+            <div
+              style={{
+                background: 'white',
+                borderRadius: '16px',
+                padding: '2rem',
+                maxWidth: '500px',
+                width: '90%',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📝</div>
+                <h2 style={{ color: '#ff9800', margin: '0 0 0.5rem 0' }}>
+                  Enter Contract Phase
+                </h2>
+                <p style={{ color: '#666', margin: 0 }}>
+                  Are you sure you want to enter into a contract? This will
+                  generate a legal contract document.
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '1rem',
+                  justifyContent: 'center',
+                }}
+              >
+                <button
+                  onClick={() =>
+                    setContractConfirmModal({
+                      isOpen: false,
+                      interactionId: '',
+                    })
+                  }
+                  style={{
+                    background: '#f5f5f5',
+                    color: '#666',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#e0e0e0';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#f5f5f5';
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleEnterContract}
+                  style={{
+                    background: '#ff9800',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f57c00';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#ff9800';
+                  }}
+                >
+                  Generate Contract
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Contract Preview/Sign Modal */}
+        {contractModal.isOpen && contractModal.interaction && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10001,
+              backdropFilter: 'blur(4px)',
+              padding: '1rem',
+            }}
+            onClick={() => {
+              setContractModal({
+                isOpen: false,
+                mode: null,
+                interaction: null,
+              });
+              setSignatureName('');
+            }}
+          >
+            <div
+              style={{
+                background: 'white',
+                borderRadius: '16px',
+                width: '95%',
+                maxWidth: contractModal.mode === 'preview' ? '1200px' : '600px',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
+                overflow: 'hidden',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div
+                style={{
+                  padding: '1.5rem 2rem',
+                  borderBottom: '2px solid #e0e0e0',
+                  background: '#f5f5f5',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <h2 style={{ color: '#388e3c', margin: 0, fontSize: '1.4rem' }}>
+                  {contractModal.mode === 'preview'
+                    ? '📄 Contract Preview'
+                    : '✍️ Sign Contract'}
+                </h2>
+                <button
+                  onClick={() => {
+                    setContractModal({
+                      isOpen: false,
+                      mode: null,
+                      interaction: null,
+                    });
+                    setSignatureName('');
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '1.5rem',
+                    cursor: 'pointer',
+                    color: '#666',
+                    padding: '0.5rem',
+                    borderRadius: '50%',
+                    width: '40px',
+                    height: '40px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#e0e0e0';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'none';
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              {contractModal.mode === 'preview' ? (
+                <div
+                  style={{
+                    flex: 1,
+                    overflow: 'auto',
+                    padding: '2rem',
+                  }}
+                >
+                  <pre
+                    style={{
+                      fontFamily: 'Georgia, serif',
+                      fontSize: '0.95rem',
+                      lineHeight: '1.8',
+                      whiteSpace: 'pre-wrap',
+                      wordWrap: 'break-word',
+                      color: '#333',
+                      background: 'white',
+                      padding: '2rem',
+                      border: '1px solid #e0e0e0',
+                      borderRadius: '8px',
+                      margin: 0,
+                    }}
+                  >
+                    {generateContractContent(contractModal.interaction)}
+                  </pre>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    flex: 1,
+                    overflow: 'auto',
+                    padding: '2rem',
+                  }}
+                >
+                  <div
+                    style={{
+                      marginBottom: '2rem',
+                      padding: '1.5rem',
+                      background: '#e8f5e9',
+                      borderRadius: '8px',
+                      border: '2px solid #4caf50',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '1.5rem',
+                        textAlign: 'center',
+                        marginBottom: '0.5rem',
+                      }}
+                    >
+                      📋
+                    </div>
+                    <h3
+                      style={{
+                        color: '#2e7d32',
+                        margin: '0 0 0.5rem 0',
+                        textAlign: 'center',
+                      }}
+                    >
+                      Digital Signature
+                    </h3>
+                    <p
+                      style={{
+                        margin: 0,
+                        color: '#6d4c41',
+                        textAlign: 'center',
+                        fontSize: '0.9rem',
+                      }}
+                    >
+                      By signing this contract, you acknowledge that you have
+                      read, understood, and agree to all terms and conditions.
+                    </p>
+                  </div>
+
+                  <div style={{ marginBottom: '1.5rem' }}>
+                    <label
+                      style={{
+                        display: 'block',
+                        color: '#388e3c',
+                        fontWeight: 'bold',
+                        marginBottom: '0.5rem',
+                        fontSize: '0.95rem',
+                      }}
+                    >
+                      Full Name (as per records) *
+                    </label>
+                    <input
+                      type='text'
+                      value={signatureName}
+                      onChange={(e) => setSignatureName(e.target.value)}
+                      placeholder='Enter your full name'
+                      style={{
+                        width: '100%',
+                        padding: '1rem',
+                        border: '2px solid #c8e6c9',
+                        borderRadius: '8px',
+                        fontSize: '1rem',
+                        fontFamily: 'Brush Script MT, cursive',
+                        transition: 'border-color 0.3s ease',
+                        boxSizing: 'border-box',
+                      }}
+                      onFocus={(e) => {
+                        e.currentTarget.style.borderColor = '#388e3c';
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.borderColor = '#c8e6c9';
+                      }}
+                    />
+                  </div>
+
+                  {signatureName && (
+                    <div
+                      style={{
+                        padding: '2rem',
+                        background: '#f9f9f9',
+                        borderRadius: '8px',
+                        border: '2px dashed #388e3c',
+                        textAlign: 'center',
+                        marginBottom: '1.5rem',
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: '#999',
+                          fontSize: '0.8rem',
+                          marginBottom: '0.5rem',
+                        }}
+                      >
+                        Signature Preview
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: 'Brush Script MT, cursive',
+                          fontSize: '2rem',
+                          color: '#388e3c',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        {signatureName}
+                      </div>
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      padding: '1rem',
+                      background: '#fff3e0',
+                      borderRadius: '8px',
+                      border: '1px solid #ffb74d',
+                      marginBottom: '1.5rem',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.85rem', color: '#e65100' }}>
+                      ⚠️ <strong>Important:</strong> This is a legally binding
+                      electronic signature. Make sure all contract details are
+                      correct before signing.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div
+                style={{
+                  padding: '1.5rem 2rem',
+                  borderTop: '1px solid #e0e0e0',
+                  background: '#f9f9f9',
+                  display: 'flex',
+                  gap: '1rem',
+                  justifyContent: 'flex-end',
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setContractModal({
+                      isOpen: false,
+                      mode: null,
+                      interaction: null,
+                    });
+                    setSignatureName('');
+                  }}
+                  style={{
+                    background: '#f5f5f5',
+                    color: '#666',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#e0e0e0';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#f5f5f5';
+                  }}
+                >
+                  {contractModal.mode === 'preview' ? 'Close' : 'Cancel'}
+                </button>
+
+                {contractModal.mode === 'sign' && (
+                  <button
+                    onClick={submitSignature}
+                    disabled={!signatureName.trim()}
+                    style={{
+                      background: signatureName.trim() ? '#4caf50' : '#ccc',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '0.75rem 2rem',
+                      cursor: signatureName.trim() ? 'pointer' : 'not-allowed',
+                      fontSize: '0.95rem',
+                      fontWeight: 'bold',
+                      transition: 'all 0.3s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (signatureName.trim()) {
+                        e.currentTarget.style.background = '#388e3c';
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (signatureName.trim()) {
+                        e.currentTarget.style.background = '#4caf50';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                      }
+                    }}
+                  >
+                    ✍️ Sign Contract
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Snackbar */}
+        <Snackbar
+          message={snackbar.message}
+          type={snackbar.type}
+          isOpen={snackbar.isOpen}
+          onClose={() => setSnackbar({ ...snackbar, isOpen: false })}
+          duration={3000}
+        />
       </div>
       <Footer />
     </>

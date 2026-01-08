@@ -904,3 +904,564 @@ export const sendProductRejectionEmail = async (
   }
 };
 
+// Send interaction acceptance email (when both parties accept)
+export const sendInteractionAcceptanceEmail = async (
+  farmerEmail: string,
+  buyerEmail: string,
+  farmerName: string,
+  buyerName: string,
+  productName: string,
+  interactionType: string
+) => {
+  const transporter = createTransporter();
+
+  const interactionTypeLabel = interactionType === 'express_interest' 
+    ? 'Express Interest' 
+    : interactionType === 'request_sample' 
+    ? 'Sample Request' 
+    : 'Shortlist';
+
+  // Email to Farmer
+  const farmerMailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: farmerEmail,
+    subject: `✅ Mutual Acceptance - ${productName}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background: #e8f5e9;
+              padding: 20px;
+              text-align: center;
+              border-radius: 8px 8px 0 0;
+            }
+            .header h1 {
+              color: #388e3c;
+              margin: 0;
+              font-size: 24px;
+            }
+            .content {
+              background: #fff;
+              padding: 30px;
+              border: 2px solid #c8e6c9;
+              border-radius: 0 0 8px 8px;
+            }
+            .highlight-box {
+              background: #fff9c4;
+              border: 2px solid #f57f17;
+              padding: 20px;
+              border-radius: 8px;
+              margin: 20px 0;
+              text-align: center;
+            }
+            .button {
+              display: inline-block;
+              padding: 12px 30px;
+              background: #388e3c;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 20px;
+              color: #6d4c41;
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🌱 Farmers Direct</h1>
+          </div>
+          <div class="content">
+            <h2 style="color: #388e3c;">🎉 Great News!</h2>
+            <p>Dear ${farmerName},</p>
+            <p>Both you and the buyer have accepted the interaction!</p>
+            
+            <div class="highlight-box">
+              <h3 style="color: #f57f17; margin: 0 0 10px 0;">Mutual Acceptance Achieved</h3>
+              <p style="margin: 0;"><strong>Product:</strong> ${productName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Buyer:</strong> ${buyerName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Interaction Type:</strong> ${interactionTypeLabel}</p>
+            </div>
+
+            <p><strong>Next Steps:</strong></p>
+            <ul>
+              <li>Log in to your account to proceed with contract creation</li>
+              <li>Click "Enter into Contract" to generate a legal agreement</li>
+              <li>Review and sign the contract to finalize the deal</li>
+            </ul>
+
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login" class="button">
+                📋 View Dashboard
+              </a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Mutual Acceptance
+      
+      Dear ${farmerName},
+      
+      Great News! Both you and the buyer have accepted the interaction!
+      
+      Details:
+      - Product: ${productName}
+      - Buyer: ${buyerName}
+      - Interaction Type: ${interactionTypeLabel}
+      
+      Next Steps:
+      - Log in to your account to proceed with contract creation
+      - Click "Enter into Contract" to generate a legal agreement
+      - Review and sign the contract to finalize the deal
+      
+      Visit: ${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login
+      
+      © 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  // Email to Buyer
+  const buyerMailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: buyerEmail,
+    subject: `✅ Mutual Acceptance - ${productName}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background: #e8f5e9;
+              padding: 20px;
+              text-align: center;
+              border-radius: 8px 8px 0 0;
+            }
+            .header h1 {
+              color: #388e3c;
+              margin: 0;
+              font-size: 24px;
+            }
+            .content {
+              background: #fff;
+              padding: 30px;
+              border: 2px solid #c8e6c9;
+              border-radius: 0 0 8px 8px;
+            }
+            .highlight-box {
+              background: #e3f2fd;
+              border: 2px solid #1565c0;
+              padding: 20px;
+              border-radius: 8px;
+              margin: 20px 0;
+              text-align: center;
+            }
+            .button {
+              display: inline-block;
+              padding: 12px 30px;
+              background: #2196f3;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 20px;
+              color: #6d4c41;
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🌱 Farmers Direct</h1>
+          </div>
+          <div class="content">
+            <h2 style="color: #2196f3;">🎉 Great News!</h2>
+            <p>Dear ${buyerName},</p>
+            <p>Both you and the farmer have accepted the interaction!</p>
+            
+            <div class="highlight-box">
+              <h3 style="color: #1565c0; margin: 0 0 10px 0;">Mutual Acceptance Achieved</h3>
+              <p style="margin: 0;"><strong>Product:</strong> ${productName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Farmer:</strong> ${farmerName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Interaction Type:</strong> ${interactionTypeLabel}</p>
+            </div>
+
+            <p><strong>Next Steps:</strong></p>
+            <ul>
+              <li>Log in to your account to proceed with contract creation</li>
+              <li>Either party can click "Enter into Contract" to generate a legal agreement</li>
+              <li>Review and sign the contract to finalize the purchase</li>
+            </ul>
+
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login" class="button">
+                📋 View Dashboard
+              </a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Mutual Acceptance
+      
+      Dear ${buyerName},
+      
+      Great News! Both you and the farmer have accepted the interaction!
+      
+      Details:
+      - Product: ${productName}
+      - Farmer: ${farmerName}
+      - Interaction Type: ${interactionTypeLabel}
+      
+      Next Steps:
+      - Log in to your account to proceed with contract creation
+      - Either party can click "Enter into Contract" to generate a legal agreement
+      - Review and sign the contract to finalize the purchase
+      
+      Visit: ${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login
+      
+      © 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  try {
+    await Promise.all([
+      transporter.sendMail(farmerMailOptions),
+      transporter.sendMail(buyerMailOptions)
+    ]);
+    console.log('Interaction acceptance emails sent successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('Error sending interaction acceptance emails:', error);
+    throw error;
+  }
+};
+
+// Send contract fully signed email (when both parties sign)
+export const sendContractSignedEmail = async (
+  farmerEmail: string,
+  buyerEmail: string,
+  farmerName: string,
+  buyerName: string,
+  productName: string,
+  contractPdf?: Buffer
+) => {
+  const transporter = createTransporter();
+
+  // Prepare PDF attachment if provided
+  const attachments = contractPdf ? [{
+    filename: `Contract_${productName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+    content: contractPdf,
+    contentType: 'application/pdf'
+  }] : [];
+
+  // Email to Farmer
+  const farmerMailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: farmerEmail,
+    subject: `📝 Contract Fully Signed - ${productName}`,
+    attachments: attachments,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background: #e8f5e9;
+              padding: 20px;
+              text-align: center;
+              border-radius: 8px 8px 0 0;
+            }
+            .header h1 {
+              color: #388e3c;
+              margin: 0;
+              font-size: 24px;
+            }
+            .content {
+              background: #fff;
+              padding: 30px;
+              border: 2px solid #c8e6c9;
+              border-radius: 0 0 8px 8px;
+            }
+            .success-box {
+              background: #e8f5e9;
+              border: 2px solid #4caf50;
+              padding: 20px;
+              border-radius: 8px;
+              margin: 20px 0;
+              text-align: center;
+            }
+            .button {
+              display: inline-block;
+              padding: 12px 30px;
+              background: #ff9800;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 20px;
+              color: #6d4c41;
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🌱 Farmers Direct</h1>
+          </div>
+          <div class="content">
+            <h2 style="color: #388e3c;">🎊 Contract Fully Signed!</h2>
+            <p>Dear ${farmerName},</p>
+            <p>Great news! The contract has been signed by both parties.</p>
+            
+            <div class="success-box">
+              <h3 style="color: #2e7d32; margin: 0 0 10px 0; font-size: 2rem;">✅ ✅</h3>
+              <h3 style="color: #2e7d32; margin: 0 0 10px 0;">Contract Executed</h3>
+              <p style="margin: 0;"><strong>Product:</strong> ${productName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Buyer:</strong> ${buyerName}</p>
+              <p style="margin: 15px 0 0 0; font-size: 14px; color: #666;">
+                Status updated to: <strong style="color: #01579b;">Payment Phase</strong>
+              </p>
+            </div>
+
+            <p><strong>📎 Signed Contract Attached</strong></p>
+            <p style="background: #fff3cd; border-left: 4px solid #ff9800; padding: 10px; margin: 15px 0;">
+              A PDF copy of the fully executed contract is attached to this email for your records.
+            </p>
+
+            <p><strong>Next Steps:</strong></p>
+            <ul>
+              <li>The transaction has moved to the payment phase</li>
+              <li>Log in to your account to view the contract and proceed with payment</li>
+              <li>Keep the attached PDF for your records</li>
+            </ul>
+
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login" class="button">
+                💳 Proceed to Payment
+              </a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Contract Fully Signed
+      
+      Dear ${farmerName},
+      
+      Great News! The contract has been signed by both parties.
+      
+      Details:
+      - Product: ${productName}
+      - Buyer: ${buyerName}
+      - Status: Payment Phase
+      
+      📎 SIGNED CONTRACT ATTACHED
+      A PDF copy of the fully executed contract is attached to this email.
+      
+      Next Steps:
+      - The transaction has moved to the payment phase
+      - Log in to your account to view the contract and proceed with payment
+      - Keep the attached PDF for your records
+      
+      Visit: ${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login
+      
+      © 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  // Email to Buyer
+  const buyerMailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: buyerEmail,
+    subject: `📝 Contract Fully Signed - ${productName}`,
+    attachments: attachments,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background: #e8f5e9;
+              padding: 20px;
+              text-align: center;
+              border-radius: 8px 8px 0 0;
+            }
+            .header h1 {
+              color: #388e3c;
+              margin: 0;
+              font-size: 24px;
+            }
+            .content {
+              background: #fff;
+              padding: 30px;
+              border: 2px solid #c8e6c9;
+              border-radius: 0 0 8px 8px;
+            }
+            .success-box {
+              background: #e8f5e9;
+              border: 2px solid #4caf50;
+              padding: 20px;
+              border-radius: 8px;
+              margin: 20px 0;
+              text-align: center;
+            }
+            .button {
+              display: inline-block;
+              padding: 12px 30px;
+              background: #ff9800;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 20px;
+              color: #6d4c41;
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🌱 Farmers Direct</h1>
+          </div>
+          <div class="content">
+            <h2 style="color: #2196f3;">🎊 Contract Fully Signed!</h2>
+            <p>Dear ${buyerName},</p>
+            <p>Great news! The contract has been signed by both parties.</p>
+            
+            <div class="success-box">
+              <h3 style="color: #2e7d32; margin: 0 0 10px 0; font-size: 2rem;">✅ ✅</h3>
+              <h3 style="color: #2e7d32; margin: 0 0 10px 0;">Contract Executed</h3>
+              <p style="margin: 0;"><strong>Product:</strong> ${productName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Farmer:</strong> ${farmerName}</p>
+              <p style="margin: 15px 0 0 0; font-size: 14px; color: #666;">
+                Status updated to: <strong style="color: #01579b;">Payment Phase</strong>
+              </p>
+            </div>
+
+            <p><strong>📎 Signed Contract Attached</strong></p>
+            <p style="background: #fff3cd; border-left: 4px solid #ff9800; padding: 10px; margin: 15px 0;">
+              A PDF copy of the fully executed contract is attached to this email for your records.
+            </p>
+
+            <p><strong>Next Steps:</strong></p>
+            <ul>
+              <li>The transaction has moved to the payment phase</li>
+              <li>Log in to your account to proceed with payment</li>
+              <li>Keep the attached PDF for your records</li>
+            </ul>
+
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login" class="button">
+                💳 Proceed to Payment
+              </a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Contract Fully Signed
+      
+      Dear ${buyerName},
+      
+      Great News! The contract has been signed by both parties.
+      
+      📎 SIGNED CONTRACT ATTACHED
+      A PDF copy of the fully executed contract is attached to this email.
+      
+      Details:
+      - Product: ${productName}
+      - Farmer: ${farmerName}
+      - Status: Payment Phase
+      
+      Next Steps:
+      - The transaction has moved to the payment phase
+      - Log in to your account to proceed with payment
+      - Keep the attached PDF for your records
+      
+      Visit: ${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login
+      
+      © 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  try {
+    await Promise.all([
+      transporter.sendMail(farmerMailOptions),
+      transporter.sendMail(buyerMailOptions)
+    ]);
+    console.log('Contract signed emails sent successfully with PDF attachment');
+    return { success: true };
+  } catch (error) {
+    console.error('Error sending contract signed emails:', error);
+    throw error;
+  }
+};
+
