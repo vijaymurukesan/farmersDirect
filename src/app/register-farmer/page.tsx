@@ -122,6 +122,8 @@ export default function RegisterFarmerPage() {
   const [tempLocation, setTempLocation] = useState({ lat: 0, lng: 0 });
   const [mapInstance, setMapInstance] = useState<LeafletMap | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
 
   // Snackbar state
   const [snackbar, setSnackbar] = useState({
@@ -129,6 +131,70 @@ export default function RegisterFarmerPage() {
     message: '',
     type: 'info' as 'success' | 'error' | 'warning' | 'info',
   });
+
+  // Load editing data from localStorage if available
+  useEffect(() => {
+    const editingData = localStorage.getItem('editingFarmerData');
+    if (editingData) {
+      try {
+        const parsedData = JSON.parse(editingData);
+        if (parsedData.isEditing) {
+          setIsEditMode(true);
+          setEditingProductId(parsedData.productId);
+
+          // Populate form with existing farmer data
+          setFormData({
+            contactPerson: parsedData.contactPerson || '',
+            companyName: parsedData.companyName || '',
+            phoneNumber: parsedData.phoneNumber || '',
+            email: parsedData.email || '',
+            gstRegistered: parsedData.gstRegistered || false,
+            isRegisteredCompany: parsedData.isRegisteredCompany || false,
+            totalAreaOfCultivation: parsedData.totalAreaOfCultivation || '',
+            totalYield: parsedData.totalYield || '',
+            availability: parsedData.availability || {
+              today: false,
+              expectedDate: '',
+            },
+            organicCertificate: parsedData.organicCertificate || '',
+            address: parsedData.address || '',
+            mapLocation: parsedData.mapLocation || { lat: 0, lng: 0 },
+            readyForContract: parsedData.readyForContract || false,
+            price: parsedData.price || 0,
+            images:
+              parsedData.images && parsedData.images.length > 0
+                ? parsedData.images
+                : [''],
+            videos:
+              parsedData.videos && parsedData.videos.length > 0
+                ? parsedData.videos
+                : [''],
+            selectedProducts: parsedData.relatedProduct
+              ? parsedData.relatedProduct.map((p: any) => p.productId)
+              : [],
+            productDetails: parsedData.relatedProduct
+              ? parsedData.relatedProduct.reduce((acc: any, p: any) => {
+                  acc[p.productId] = {
+                    cultivationArea: p.cultivationArea || '',
+                    expectedYield: p.expectedYield || '',
+                    expectedHarvestDate: p.HarvestDate || '',
+                    preBookPrice: p.PricePerUnit || 0,
+                    photoUrls: p.photos || [],
+                    videoUrls: p.videos || [],
+                  };
+                  return acc;
+                }, {})
+              : {},
+          });
+
+          // Clear localStorage after loading
+          localStorage.removeItem('editingFarmerData');
+        }
+      } catch (error) {
+        console.error('Error loading editing data:', error);
+      }
+    }
+  }, []);
 
   // Snackbar helper functions
   const showSnackbar = (
@@ -157,7 +223,11 @@ export default function RegisterFarmerPage() {
         const response = await fetch('/api/products');
         if (response.ok) {
           const data = await response.json();
-          setProducts(data);
+          // Filter to show only verified products
+          const verifiedProducts = data.filter(
+            (p: any) => p.verificationStatus === 'verified'
+          );
+          setProducts(verifiedProducts);
         } else {
           console.error('Failed to fetch products');
           // Fallback to mock data if API fails
@@ -582,24 +652,29 @@ export default function RegisterFarmerPage() {
 
       // Console log the created object
       console.log(
-        'Farmer Registration Data:',
+        isEditMode ? 'Farmer Update Data:' : 'Farmer Registration Data:',
         JSON.stringify(submissionData, null, 2)
       );
 
-      // Send data to the API
+      // Send data to the API - use PUT for edit, POST for new
       const response = await fetch('/api/farmers', {
-        method: 'POST',
+        method: isEditMode ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(submissionData),
+        body: JSON.stringify({
+          ...submissionData,
+          ...(isEditMode && { productId: editingProductId }),
+        }),
       });
 
       const result = await response.json();
 
       if (response.ok && result.success) {
         showSnackbar(
-          `Farmer registered successfully! 🎉 Farmer ID: ${result.farmerId}`,
+          isEditMode
+            ? `Farmer updated successfully! ✅`
+            : `Farmer registered successfully! 🎉 Farmer ID: ${result.farmerId}`,
           'success'
         );
 
@@ -608,7 +683,12 @@ export default function RegisterFarmerPage() {
           window.history.back();
         }, 3000);
       } else {
-        throw new Error(result.message || 'Failed to register farmer');
+        throw new Error(
+          result.message ||
+            (isEditMode
+              ? 'Failed to update farmer'
+              : 'Failed to register farmer')
+        );
       }
     } catch (error) {
       console.error('Error registering farmer:', error);
@@ -1104,22 +1184,6 @@ export default function RegisterFarmerPage() {
                   }
                   required
                   placeholder='e.g., 12000 kg/year'
-                />
-              </div>
-
-              <div className='form-field'>
-                <label className='form-label'>Price per kg (₹) *</label>
-                <input
-                  type='number'
-                  step='0.01'
-                  min='0'
-                  className='form-input'
-                  value={formData.price}
-                  onChange={(e) =>
-                    handleInputChange('price', parseFloat(e.target.value) || 0)
-                  }
-                  required
-                  placeholder='Enter price per kg'
                 />
               </div>
 

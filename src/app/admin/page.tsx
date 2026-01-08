@@ -50,6 +50,27 @@ interface VerificationDoc {
   updatedAt: string;
 }
 
+interface PendingProduct {
+  _id: string;
+  productId: string;
+  title: string;
+  type: string;
+  category: string;
+  description: string;
+  price: number;
+  adminNotes?: string;
+  images: string[];
+  videos: string[];
+  verificationStatus: string;
+  submittedBy: {
+    userId: string;
+    email: string;
+    userType: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [activeMainTab, setActiveMainTab] = useState<
@@ -62,7 +83,12 @@ export default function AdminPage() {
   const [verificationDocs, setVerificationDocs] = useState<VerificationDoc[]>(
     []
   );
+  const [pendingProducts, setPendingProducts] = useState<PendingProduct[]>([]);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+  const [editingProduct, setEditingProduct] = useState<PendingProduct | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ userType: string } | null>(
@@ -74,7 +100,7 @@ export default function AdminPage() {
     type: 'info' as 'success' | 'error' | 'warning' | 'info',
   });
 
-  // Rejection modal state
+  // Rejection modal state (for documents)
   const [rejectionModal, setRejectionModal] = useState({
     isOpen: false,
     userId: '',
@@ -84,6 +110,15 @@ export default function AdminPage() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [customReason, setCustomReason] = useState('');
 
+  // Product rejection modal state
+  const [productRejectionModal, setProductRejectionModal] = useState({
+    isOpen: false,
+    productId: '',
+    productTitle: '',
+  });
+  const [productRejectionReason, setProductRejectionReason] = useState('');
+  const [productCustomReason, setProductCustomReason] = useState('');
+
   const rejectionReasons = [
     'Document is not clear or readable',
     'Document is expired',
@@ -92,6 +127,18 @@ export default function AdminPage() {
     'Document appears to be tampered or fake',
     'Wrong document uploaded',
     'Poor image quality',
+    'Other',
+  ];
+
+  const productRejectionReasons = [
+    'Product does not meet quality standards',
+    'Incomplete or inaccurate product information',
+    'Product images are unclear or inadequate',
+    'Product already exists in catalog',
+    'Product category is incorrect',
+    'Pricing information is unrealistic',
+    'Product description is insufficient',
+    'Not suitable for our platform',
     'Other',
   ];
 
@@ -308,6 +355,138 @@ export default function AdminPage() {
     }
   };
 
+  // Product Management Handlers
+  const handleApproveProduct = async (productId: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+
+      // Find the product to get current/edited values
+      const product =
+        editingProduct && editingProduct._id === productId
+          ? editingProduct
+          : pendingProducts.find((p) => p._id === productId);
+
+      if (!product) {
+        showSnackbar('Product not found', 'error');
+        return;
+      }
+
+      const response = await fetch(`/api/products/verify`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productId,
+          action: 'approve',
+          updatedData: {
+            title: product.title,
+            type: product.type,
+            description: product.description,
+            price: product.price,
+            adminNotes: product.adminNotes,
+          },
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        showSnackbar('Product approved successfully!', 'success');
+        setPendingProducts((prev) => prev.filter((p) => p._id !== productId));
+        setEditingProduct(null);
+        setExpandedProduct(null);
+      } else {
+        throw new Error(result.message || 'Failed to approve product');
+      }
+    } catch (error) {
+      console.error('Error approving product:', error);
+      showSnackbar(
+        `Error: ${
+          error instanceof Error ? error.message : 'Failed to approve product'
+        }`,
+        'error'
+      );
+    }
+  };
+
+  const handleRejectProduct = async (
+    productId: string,
+    productTitle: string
+  ) => {
+    // Open rejection modal
+    setProductRejectionModal({
+      isOpen: true,
+      productId,
+      productTitle,
+    });
+    setProductRejectionReason('');
+    setProductCustomReason('');
+  };
+
+  // Confirm product rejection with reason
+  const confirmProductRejection = async () => {
+    const finalReason =
+      productRejectionReason === 'Other'
+        ? productCustomReason
+        : productRejectionReason;
+
+    if (!finalReason) {
+      showSnackbar('Please select or enter a rejection reason', 'warning');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`/api/products/verify`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productId: productRejectionModal.productId,
+          action: 'reject',
+          rejectionReason: finalReason,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        showSnackbar(
+          'Product rejected and removed successfully. Email sent to submitter.',
+          'success'
+        );
+        setPendingProducts((prev) =>
+          prev.filter((p) => p._id !== productRejectionModal.productId)
+        );
+        setExpandedProduct(null);
+        setEditingProduct(null);
+
+        // Close modal
+        setProductRejectionModal({
+          isOpen: false,
+          productId: '',
+          productTitle: '',
+        });
+        setProductRejectionReason('');
+        setProductCustomReason('');
+      } else {
+        throw new Error(result.message || 'Failed to reject product');
+      }
+    } catch (error) {
+      console.error('Error rejecting product:', error);
+      showSnackbar(
+        `Error: ${
+          error instanceof Error ? error.message : 'Failed to reject product'
+        }`,
+        'error'
+      );
+    }
+  };
+
   useEffect(() => {
     // Check authorization
     const userData = localStorage.getItem('userData');
@@ -369,6 +548,22 @@ export default function AdminPage() {
         if (docsResponse.ok) {
           const docsData = await docsResponse.json();
           setVerificationDocs(docsData.data || []);
+        }
+
+        // Fetch all products and filter for pending ones
+        const productsResponse = await fetch('/api/products', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (productsResponse.ok) {
+          const allProducts = await productsResponse.json();
+          // Filter products with verificationStatus === 'pending'
+          const pendingProductsList = Array.isArray(allProducts)
+            ? allProducts.filter((p: any) => p.verificationStatus === 'pending')
+            : [];
+          setPendingProducts(pendingProductsList);
         }
       } catch (error) {
         console.error('Error fetching users:', error);
@@ -3374,19 +3569,535 @@ export default function AdminPage() {
 
           {/* Product Management Tab */}
           {activeMainTab === 'products' && (
-            <div
-              style={{
-                background: 'white',
-                borderRadius: '12px',
-                padding: '3rem',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📦</div>
-              <h3 style={{ color: '#388e3c', margin: '0 0 0.5rem 0' }}>
-                Product Management
-              </h3>
-              <p style={{ color: '#6d4c41', margin: 0 }}>Coming soon...</p>
+            <div>
+              <div
+                style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '2rem',
+                  marginBottom: '2rem',
+                }}
+              >
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h2 style={{ color: '#388e3c', margin: '0 0 0.5rem 0' }}>
+                    📦 Product Management - Pending Verification
+                  </h2>
+                  <p style={{ color: '#6d4c41', margin: 0 }}>
+                    Review and manage products awaiting verification
+                  </p>
+                </div>
+
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: '3rem' }}>
+                    <div
+                      style={{
+                        width: '50px',
+                        height: '50px',
+                        border: '4px solid #c8e6c9',
+                        borderTop: '4px solid #388e3c',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                        margin: '0 auto 1rem',
+                      }}
+                    ></div>
+                    <p style={{ color: '#388e3c' }}>Loading products...</p>
+                  </div>
+                ) : pendingProducts.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '3rem',
+                      color: '#757575',
+                    }}
+                  >
+                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>
+                      ✅
+                    </div>
+                    <h3 style={{ color: '#388e3c', margin: '0 0 0.5rem 0' }}>
+                      No pending products
+                    </h3>
+                    <p style={{ margin: 0 }}>
+                      All products have been reviewed!
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div
+                      style={{
+                        marginBottom: '1rem',
+                        padding: '0.75rem',
+                        background: '#e8f5e9',
+                        borderRadius: '8px',
+                        color: '#2e7d32',
+                      }}
+                    >
+                      <strong>{pendingProducts.length}</strong> product
+                      {pendingProducts.length !== 1 ? 's' : ''} pending
+                      verification
+                    </div>
+
+                    {pendingProducts.map((product) => (
+                      <div
+                        key={product._id}
+                        style={{
+                          background: '#f9f9f9',
+                          border: '1px solid #e0e0e0',
+                          borderRadius: '8px',
+                          padding: '1.5rem',
+                          marginBottom: '1rem',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            marginBottom: '1rem',
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.75rem',
+                                marginBottom: '0.5rem',
+                              }}
+                            >
+                              <h3
+                                style={{
+                                  color: '#388e3c',
+                                  margin: 0,
+                                  fontSize: '1.3rem',
+                                }}
+                              >
+                                {editingProduct &&
+                                editingProduct._id === product._id ? (
+                                  <input
+                                    type='text'
+                                    value={editingProduct.title}
+                                    onChange={(e) =>
+                                      setEditingProduct({
+                                        ...editingProduct,
+                                        title: e.target.value,
+                                      })
+                                    }
+                                    style={{
+                                      padding: '0.5rem',
+                                      border: '2px solid #388e3c',
+                                      borderRadius: '4px',
+                                      fontSize: '1.1rem',
+                                      width: '100%',
+                                    }}
+                                  />
+                                ) : (
+                                  product.title
+                                )}
+                              </h3>
+                              <span
+                                style={{
+                                  background: '#fff3e0',
+                                  color: '#f57c00',
+                                  padding: '0.25rem 0.75rem',
+                                  borderRadius: '12px',
+                                  fontSize: '0.85rem',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                Pending
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                color: '#666',
+                                fontSize: '0.9rem',
+                                marginBottom: '0.5rem',
+                              }}
+                            >
+                              <strong>Product ID:</strong> {product.productId} |{' '}
+                              <strong>Submitted:</strong>{' '}
+                              {new Date(product.createdAt).toLocaleString()}
+                            </div>
+                            {product.submittedBy && (
+                              <div
+                                style={{
+                                  color: '#666',
+                                  fontSize: '0.9rem',
+                                }}
+                              >
+                                <strong>Submitted by:</strong>{' '}
+                                {product.submittedBy.email} (
+                                {product.submittedBy.userType})
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (expandedProduct === product._id) {
+                                setExpandedProduct(null);
+                                setEditingProduct(null);
+                              } else {
+                                setExpandedProduct(product._id);
+                                setEditingProduct(null);
+                              }
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#388e3c',
+                              cursor: 'pointer',
+                              fontSize: '1.5rem',
+                              padding: '0.25rem',
+                            }}
+                          >
+                            {expandedProduct === product._id ? '▲' : '▼'}
+                          </button>
+                        </div>
+
+                        {expandedProduct === product._id && (
+                          <div
+                            style={{
+                              borderTop: '1px solid #e0e0e0',
+                              paddingTop: '1rem',
+                            }}
+                          >
+                            <div style={{ marginBottom: '1rem' }}>
+                              <label
+                                style={{
+                                  display: 'block',
+                                  fontWeight: 'bold',
+                                  marginBottom: '0.5rem',
+                                  color: '#388e3c',
+                                }}
+                              >
+                                Type:
+                              </label>
+                              {editingProduct &&
+                              editingProduct._id === product._id ? (
+                                <input
+                                  type='text'
+                                  value={editingProduct.type}
+                                  onChange={(e) =>
+                                    setEditingProduct({
+                                      ...editingProduct,
+                                      type: e.target.value,
+                                    })
+                                  }
+                                  style={{
+                                    padding: '0.5rem',
+                                    border: '1px solid #ddd',
+                                    borderRadius: '4px',
+                                    fontSize: '1rem',
+                                    width: '100%',
+                                  }}
+                                />
+                              ) : (
+                                <div style={{ color: '#333' }}>
+                                  {product.type}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ marginBottom: '1rem' }}>
+                              <label
+                                style={{
+                                  display: 'block',
+                                  fontWeight: 'bold',
+                                  marginBottom: '0.5rem',
+                                  color: '#388e3c',
+                                }}
+                              >
+                                Description:
+                              </label>
+                              {editingProduct &&
+                              editingProduct._id === product._id ? (
+                                <textarea
+                                  value={editingProduct.description}
+                                  onChange={(e) =>
+                                    setEditingProduct({
+                                      ...editingProduct,
+                                      description: e.target.value,
+                                    })
+                                  }
+                                  style={{
+                                    padding: '0.5rem',
+                                    border: '1px solid #ddd',
+                                    borderRadius: '4px',
+                                    fontSize: '1rem',
+                                    width: '100%',
+                                    minHeight: '100px',
+                                    resize: 'vertical',
+                                  }}
+                                />
+                              ) : (
+                                <div style={{ color: '#333' }}>
+                                  {product.description}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ marginBottom: '1rem' }}>
+                              <label
+                                style={{
+                                  display: 'block',
+                                  fontWeight: 'bold',
+                                  marginBottom: '0.5rem',
+                                  color: '#388e3c',
+                                }}
+                              >
+                                Price:
+                              </label>
+                              {editingProduct &&
+                              editingProduct._id === product._id ? (
+                                <input
+                                  type='number'
+                                  step='0.01'
+                                  value={editingProduct.price}
+                                  onChange={(e) =>
+                                    setEditingProduct({
+                                      ...editingProduct,
+                                      price: parseFloat(e.target.value) || 0,
+                                    })
+                                  }
+                                  style={{
+                                    padding: '0.5rem',
+                                    border: '1px solid #ddd',
+                                    borderRadius: '4px',
+                                    fontSize: '1rem',
+                                    width: '100%',
+                                  }}
+                                />
+                              ) : (
+                                <div
+                                  style={{
+                                    color: '#2e7d32',
+                                    fontWeight: 'bold',
+                                  }}
+                                >
+                                  ₹{product.price}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ marginBottom: '1rem' }}>
+                              <label
+                                style={{
+                                  display: 'block',
+                                  fontWeight: 'bold',
+                                  marginBottom: '0.5rem',
+                                  color: '#388e3c',
+                                }}
+                              >
+                                Admin Notes:
+                              </label>
+                              {editingProduct &&
+                              editingProduct._id === product._id ? (
+                                <textarea
+                                  value={editingProduct.adminNotes || ''}
+                                  onChange={(e) =>
+                                    setEditingProduct({
+                                      ...editingProduct,
+                                      adminNotes: e.target.value,
+                                    })
+                                  }
+                                  placeholder='Add internal notes about this product...'
+                                  style={{
+                                    padding: '0.5rem',
+                                    border: '1px solid #ddd',
+                                    borderRadius: '4px',
+                                    fontSize: '1rem',
+                                    width: '100%',
+                                    minHeight: '80px',
+                                    resize: 'vertical',
+                                  }}
+                                />
+                              ) : (
+                                <div
+                                  style={{
+                                    color: '#666',
+                                    fontStyle: product.adminNotes
+                                      ? 'normal'
+                                      : 'italic',
+                                  }}
+                                >
+                                  {product.adminNotes || 'No admin notes'}
+                                </div>
+                              )}
+                            </div>
+
+                            {product.images && product.images.length > 0 && (
+                              <div style={{ marginBottom: '1rem' }}>
+                                <label
+                                  style={{
+                                    display: 'block',
+                                    fontWeight: 'bold',
+                                    marginBottom: '0.5rem',
+                                    color: '#388e3c',
+                                  }}
+                                >
+                                  Images:
+                                </label>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    gap: '0.5rem',
+                                    flexWrap: 'wrap',
+                                  }}
+                                >
+                                  {product.images.map((img, idx) => (
+                                    <img
+                                      key={idx}
+                                      src={img}
+                                      alt={`Product ${idx + 1}`}
+                                      style={{
+                                        width: '100px',
+                                        height: '100px',
+                                        objectFit: 'cover',
+                                        borderRadius: '8px',
+                                        border: '1px solid #ddd',
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {product.videos && product.videos.length > 0 && (
+                              <div style={{ marginBottom: '1rem' }}>
+                                <label
+                                  style={{
+                                    display: 'block',
+                                    fontWeight: 'bold',
+                                    marginBottom: '0.5rem',
+                                    color: '#388e3c',
+                                  }}
+                                >
+                                  Videos:
+                                </label>
+                                <div style={{ color: '#666' }}>
+                                  {product.videos.length} video
+                                  {product.videos.length !== 1 ? 's' : ''}{' '}
+                                  uploaded
+                                </div>
+                              </div>
+                            )}
+
+                            <div
+                              style={{
+                                display: 'flex',
+                                gap: '1rem',
+                                marginTop: '1.5rem',
+                                paddingTop: '1rem',
+                                borderTop: '1px solid #e0e0e0',
+                              }}
+                            >
+                              {editingProduct &&
+                              editingProduct._id === product._id ? (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      handleApproveProduct(product._id);
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      background: '#4caf50',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      padding: '0.75rem 1.5rem',
+                                      cursor: 'pointer',
+                                      fontSize: '1rem',
+                                      fontWeight: 'bold',
+                                    }}
+                                  >
+                                    ✓ Save & Approve
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingProduct(null)}
+                                    style={{
+                                      flex: 1,
+                                      background: '#757575',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      padding: '0.75rem 1.5rem',
+                                      cursor: 'pointer',
+                                      fontSize: '1rem',
+                                      fontWeight: 'bold',
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() =>
+                                      setEditingProduct({ ...product })
+                                    }
+                                    style={{
+                                      flex: 1,
+                                      background: '#2196f3',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      padding: '0.75rem 1.5rem',
+                                      cursor: 'pointer',
+                                      fontSize: '1rem',
+                                      fontWeight: 'bold',
+                                    }}
+                                  >
+                                    ✏️ Edit
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleApproveProduct(product._id)
+                                    }
+                                    style={{
+                                      flex: 1,
+                                      background: '#4caf50',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      padding: '0.75rem 1.5rem',
+                                      cursor: 'pointer',
+                                      fontSize: '1rem',
+                                      fontWeight: 'bold',
+                                    }}
+                                  >
+                                    ✓ Approve
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleRejectProduct(
+                                        product._id,
+                                        product.title
+                                      )
+                                    }
+                                    style={{
+                                      flex: 1,
+                                      background: '#f44336',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      padding: '0.75rem 1.5rem',
+                                      cursor: 'pointer',
+                                      fontSize: '1rem',
+                                      fontWeight: 'bold',
+                                    }}
+                                  >
+                                    ✕ Reject
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -3561,6 +4272,199 @@ export default function AdminPage() {
                   cursor:
                     rejectionReason &&
                     (rejectionReason !== 'Other' || customReason)
+                      ? 'pointer'
+                      : 'not-allowed',
+                  fontSize: '1rem',
+                  fontWeight: 'bold',
+                }}
+              >
+                Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Rejection Modal */}
+      {productRejectionModal.isOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10000,
+            backdropFilter: 'blur(4px)',
+          }}
+          onClick={() =>
+            setProductRejectionModal({
+              isOpen: false,
+              productId: '',
+              productTitle: '',
+            })
+          }
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '16px',
+              padding: '2rem',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ color: '#d32f2f', margin: '0 0 1rem 0' }}>
+              🚫 Reject Product
+            </h2>
+
+            <div
+              style={{
+                background: '#fff3e0',
+                border: '1px solid #ffb74d',
+                borderRadius: '8px',
+                padding: '1rem',
+                marginBottom: '1.5rem',
+              }}
+            >
+              <strong style={{ color: '#f57c00' }}>Product:</strong>{' '}
+              {productRejectionModal.productTitle}
+            </div>
+
+            <p style={{ color: '#666', marginBottom: '1rem' }}>
+              Please select a reason for rejecting this product. An email will
+              be sent to the submitter with your reason.
+            </p>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              {productRejectionReasons.map((reason) => (
+                <div
+                  key={reason}
+                  style={{
+                    marginBottom: '0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0.75rem',
+                    border:
+                      productRejectionReason === reason
+                        ? '2px solid #388e3c'
+                        : '1px solid #e0e0e0',
+                    borderRadius: '8px',
+                    background:
+                      productRejectionReason === reason ? '#f1f8e9' : 'white',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onClick={() => setProductRejectionReason(reason)}
+                >
+                  <input
+                    type='radio'
+                    name='productRejectionReason'
+                    value={reason}
+                    checked={productRejectionReason === reason}
+                    onChange={(e) => setProductRejectionReason(e.target.value)}
+                    style={{
+                      marginRight: '0.75rem',
+                      accentColor: '#388e3c',
+                    }}
+                  />
+                  <label
+                    style={{
+                      cursor: 'pointer',
+                      flex: 1,
+                      color: '#333',
+                      fontSize: '0.95rem',
+                    }}
+                  >
+                    {reason}
+                  </label>
+                </div>
+              ))}
+            </div>
+
+            {productRejectionReason === 'Other' && (
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '0.5rem',
+                    fontWeight: 'bold',
+                    color: '#388e3c',
+                  }}
+                >
+                  Custom Reason:
+                </label>
+                <textarea
+                  value={productCustomReason}
+                  onChange={(e) => setProductCustomReason(e.target.value)}
+                  placeholder='Enter custom rejection reason...'
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '2px solid #e0e0e0',
+                    borderRadius: '8px',
+                    fontSize: '1rem',
+                    resize: 'vertical',
+                    minHeight: '100px',
+                    fontFamily: 'Arial, sans-serif',
+                  }}
+                />
+              </div>
+            )}
+
+            <div
+              style={{
+                display: 'flex',
+                gap: '1rem',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <button
+                onClick={() =>
+                  setProductRejectionModal({
+                    isOpen: false,
+                    productId: '',
+                    productTitle: '',
+                  })
+                }
+                style={{
+                  background: '#f5f5f5',
+                  color: '#757575',
+                  border: '2px solid #e0e0e0',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1.5rem',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  fontWeight: 'bold',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmProductRejection}
+                disabled={
+                  !productRejectionReason ||
+                  (productRejectionReason === 'Other' && !productCustomReason)
+                }
+                style={{
+                  background:
+                    productRejectionReason &&
+                    (productRejectionReason !== 'Other' || productCustomReason)
+                      ? '#d32f2f'
+                      : '#ccc',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1.5rem',
+                  cursor:
+                    productRejectionReason &&
+                    (productRejectionReason !== 'Other' || productCustomReason)
                       ? 'pointer'
                       : 'not-allowed',
                   fontSize: '1rem',

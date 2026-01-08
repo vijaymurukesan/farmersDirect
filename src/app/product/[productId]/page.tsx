@@ -13,6 +13,8 @@ interface Product {
   category: string;
   price: string;
   description: string;
+  images?: string[];
+  videos?: string[];
   farmers?: Farmer[];
 }
 
@@ -21,6 +23,7 @@ interface Farmer {
   companyName: string;
   phoneNumber: string;
   email: string;
+  farmerId?: string; // Farmer ID from user collection
   address: string;
   mapLocation: { lat: number; lng: number };
   organicCertificate?: string;
@@ -153,7 +156,14 @@ export default function ProductDetailsPage() {
     new Set()
   );
 
-  const totalImages = 3; // We generate 3 images per product
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editedProduct, setEditedProduct] = useState<Product | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Total images based on actual product images or default to 1 if none
+  const totalImages =
+    product?.images && product.images.length > 0 ? product.images.length : 1;
 
   // Check user authentication
   useEffect(() => {
@@ -172,6 +182,161 @@ export default function ProductDetailsPage() {
     }
   }, []);
 
+  // Initialize edited product when product loads
+  useEffect(() => {
+    if (product) {
+      setEditedProduct(product);
+    }
+  }, [product]);
+
+  // Handle edit button click
+  const handleEditClick = () => {
+    setIsEditMode(true);
+    setEditedProduct(product);
+  };
+
+  // Handle cancel edit
+  const handleCancelEdit = () => {
+    setIsEditMode(false);
+    setEditedProduct(product);
+  };
+
+  // Handle save product
+  const handleSaveProduct = async () => {
+    if (!editedProduct) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/products`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          productId: productId,
+          title: editedProduct.title,
+          type: editedProduct.type,
+          price: editedProduct.price,
+          description: editedProduct.description,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        // Update the product state with new data
+        setProduct(editedProduct);
+        setIsEditMode(false);
+        alert('Product updated successfully!');
+      } else {
+        throw new Error(result.message || 'Failed to update product');
+      }
+    } catch (error) {
+      console.error('Error updating product:', error);
+      alert(
+        `Error updating product: ${
+          error instanceof Error ? error.message : 'Please try again.'
+        }`
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handle product field changes
+  const handleProductFieldChange = (field: keyof Product, value: string) => {
+    if (editedProduct) {
+      setEditedProduct({
+        ...editedProduct,
+        [field]: value,
+      });
+    }
+  };
+
+  // Handle edit farmer - navigate to register-farmer with farmer data
+  const handleEditFarmer = (farmer: Farmer) => {
+    // Store farmer data in localStorage for the register-farmer page to load
+    localStorage.setItem(
+      'editingFarmerData',
+      JSON.stringify({
+        ...farmer,
+        productId: productId,
+        isEditing: true,
+      })
+    );
+    // Navigate to register-farmer page
+    router.push('/register-farmer');
+  };
+
+  // Check if user can edit a specific farmer tile
+  const canEditFarmer = (farmer: Farmer): boolean => {
+    if (!isLoggedIn || !userData) return false;
+
+    // Admin and owner can edit any farmer
+    if (userData.userType === 'admin' || userData.userType === 'owner') {
+      return true;
+    }
+
+    // Farmer can edit their own tile - match by email OR farmerId
+    if (userData.userType === 'farmer') {
+      // Match by email
+      if (userData.email === farmer.email) {
+        return true;
+      }
+
+      // Match by farmerId (if both exist)
+      if (
+        userData.farmerId &&
+        (farmer as any).farmerId &&
+        userData.farmerId === (farmer as any).farmerId
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Handle delete farmer
+  const handleDeleteFarmer = async (farmer: Farmer) => {
+    // Confirm deletion
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete ${farmer.contactPerson} from this product?\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch('/api/farmers', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: farmer.email,
+          productId: productId,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        alert('Farmer deleted successfully!');
+        // Reload the page to reflect changes
+        window.location.reload();
+      } else {
+        throw new Error(result.message || 'Failed to delete farmer');
+      }
+    } catch (error) {
+      console.error('Error deleting farmer:', error);
+      alert(
+        `Error deleting farmer: ${
+          error instanceof Error ? error.message : 'Please try again.'
+        }`
+      );
+    }
+  };
+
   const nextImage = () => {
     setImageLoading(true);
     setCurrentImageIndex((prev) => (prev + 1) % totalImages);
@@ -180,6 +345,28 @@ export default function ProductDetailsPage() {
   const prevImage = () => {
     setImageLoading(true);
     setCurrentImageIndex((prev) => (prev - 1 + totalImages) % totalImages);
+  };
+
+  // Check if current user has already registered for this product
+  const hasUserAlreadyRegistered = (): boolean => {
+    if (!isLoggedIn || !userData || !product?.farmers) return false;
+
+    // Check if any farmer in the product's farmers array matches current user
+    return product.farmers.some((farmer: Farmer) => {
+      // Match by email
+      if (userData.email === farmer.email) {
+        return true;
+      }
+      // Match by farmerId (if both exist)
+      if (
+        userData.farmerId &&
+        farmer.farmerId &&
+        userData.farmerId === farmer.farmerId
+      ) {
+        return true;
+      }
+      return false;
+    });
   };
 
   // Handle Add Farmer button click with access control
@@ -266,13 +453,20 @@ export default function ProductDetailsPage() {
   // Handle map/certificate link clicks
   const handleProtectedLink = (
     e: React.MouseEvent<HTMLAnchorElement>,
-    url: string
+    url: string,
+    farmer: Farmer
   ) => {
     e.preventDefault();
 
     // Check if user is logged in
     if (!isLoggedIn || !userData) {
       router.push('/login');
+      return;
+    }
+
+    // Allow access if user can edit this farmer (admin/owner/creator)
+    if (canEditFarmer(farmer)) {
+      window.open(url, '_blank');
       return;
     }
 
@@ -299,6 +493,213 @@ export default function ProductDetailsPage() {
 
     // Open link in new tab if user is authorized
     window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Handle Shortlist
+  const handleShortlist = async (farmer: Farmer) => {
+    if (!isLoggedIn || !userData) {
+      router.push('/login');
+      return;
+    }
+
+    // Find the matching product from farmer's relatedProduct array
+    const matchedProduct = (farmer as any).relatedProduct?.find(
+      (p: any) => p.productId === productId
+    );
+
+    const interactionData = {
+      interactionType: 'shortlist',
+      farmerId: farmer.farmerId || '',
+      buyerId: userData.buyerId || userData.farmerId || '',
+
+      // Farmer details
+      farmerEmail: farmer.email,
+      farmerContactPerson: farmer.contactPerson,
+      farmerCompanyName: farmer.companyName,
+      farmerPhoneNumber: farmer.phoneNumber,
+      farmerAddress: farmer.address,
+      farmerMapLocation: farmer.mapLocation,
+
+      // Buyer details
+      buyerEmail: userData.email,
+      buyerFullName: userData.fullName || userData.contactPerson || '',
+      buyerCompanyName: userData.companyName || '',
+      buyerPhoneNumber: userData.phoneNumber || '',
+
+      // Product details
+      productId: productId,
+      productName: product?.title || '',
+      productType: product?.type || '',
+      productCategory: product?.category || '',
+      pricePerUnit: matchedProduct?.PricePerUnit || 0,
+
+      buyerNotes: '',
+    };
+
+    try {
+      const response = await fetch('/api/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(interactionData),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        alert('✅ Farmer shortlisted successfully!');
+      } else {
+        alert(result.message || 'Failed to shortlist farmer');
+      }
+    } catch (error) {
+      console.error('Error shortlisting farmer:', error);
+      alert('Error shortlisting farmer. Please try again.');
+    }
+  };
+
+  // Handle Express Interest
+  const handleExpressInterest = async (farmer: Farmer) => {
+    if (!isLoggedIn || !userData) {
+      router.push('/login');
+      return;
+    }
+
+    // Prompt for buyer notes
+    const buyerNotes = prompt(
+      'Enter any additional notes or message for the farmer (optional):'
+    );
+    if (buyerNotes === null) return; // User cancelled
+
+    // Find the matching product from farmer's relatedProduct array
+    const matchedProduct = (farmer as any).relatedProduct?.find(
+      (p: any) => p.productId === productId
+    );
+
+    const interactionData = {
+      interactionType: 'express_interest',
+      farmerId: farmer.farmerId || '',
+      buyerId: userData.buyerId || userData.farmerId || '',
+
+      // Farmer details
+      farmerEmail: farmer.email,
+      farmerContactPerson: farmer.contactPerson,
+      farmerCompanyName: farmer.companyName,
+      farmerPhoneNumber: farmer.phoneNumber,
+      farmerAddress: farmer.address,
+      farmerMapLocation: farmer.mapLocation,
+
+      // Buyer details
+      buyerEmail: userData.email,
+      buyerFullName: userData.fullName || userData.contactPerson || '',
+      buyerCompanyName: userData.companyName || '',
+      buyerPhoneNumber: userData.phoneNumber || '',
+
+      // Product details
+      productId: productId,
+      productName: product?.title || '',
+      productType: product?.type || '',
+      productCategory: product?.category || '',
+      pricePerUnit: matchedProduct?.PricePerUnit || 0,
+
+      buyerNotes: buyerNotes.trim(),
+    };
+
+    try {
+      const response = await fetch('/api/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(interactionData),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        alert(
+          '✅ Interest expressed successfully! The farmer will be notified.'
+        );
+      } else {
+        alert(result.message || 'Failed to express interest');
+      }
+    } catch (error) {
+      console.error('Error expressing interest:', error);
+      alert('Error expressing interest. Please try again.');
+    }
+  };
+
+  // Handle Request Sample
+  const handleRequestSample = async (farmer: Farmer) => {
+    if (!isLoggedIn || !userData) {
+      router.push('/login');
+      return;
+    }
+
+    // Prompt for sample details
+    const quantity = prompt('Enter desired sample quantity:');
+    if (!quantity) return;
+
+    const deliveryAddress = prompt('Enter delivery address for the sample:');
+    if (!deliveryAddress) return;
+
+    const notes = prompt('Any special requirements or notes (optional):') || '';
+
+    // Find the matching product from farmer's relatedProduct array
+    const matchedProduct = (farmer as any).relatedProduct?.find(
+      (p: any) => p.productId === productId
+    );
+
+    const interactionData = {
+      interactionType: 'request_sample',
+      farmerId: farmer.farmerId || '',
+      buyerId: userData.buyerId || userData.farmerId || '',
+
+      // Farmer details
+      farmerEmail: farmer.email,
+      farmerContactPerson: farmer.contactPerson,
+      farmerCompanyName: farmer.companyName,
+      farmerPhoneNumber: farmer.phoneNumber,
+      farmerAddress: farmer.address,
+      farmerMapLocation: farmer.mapLocation,
+
+      // Buyer details
+      buyerEmail: userData.email,
+      buyerFullName: userData.fullName || userData.contactPerson || '',
+      buyerCompanyName: userData.companyName || '',
+      buyerPhoneNumber: userData.phoneNumber || '',
+
+      // Product details
+      productId: productId,
+      productName: product?.title || '',
+      productType: product?.type || '',
+      productCategory: product?.category || '',
+      pricePerUnit: matchedProduct?.PricePerUnit || 0,
+
+      sampleDetails: {
+        quantity: quantity.trim(),
+        address: deliveryAddress.trim(),
+        notes: notes.trim(),
+      },
+      buyerNotes: notes.trim(),
+    };
+
+    try {
+      const response = await fetch('/api/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(interactionData),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        alert(
+          '✅ Sample request sent successfully! The farmer will respond soon.'
+        );
+      } else {
+        alert(result.message || 'Failed to request sample');
+      }
+    } catch (error) {
+      console.error('Error requesting sample:', error);
+      alert('Error requesting sample. Please try again.');
+    }
   };
 
   // Filter logic
@@ -805,84 +1206,251 @@ export default function ProductDetailsPage() {
           >
             {/* Column 1 - Product Information */}
             <div>
-              <h1
-                style={{
-                  color: '#388e3c',
-                  fontSize: '2.5rem',
-                  marginBottom: '0.5rem',
-                }}
-              >
-                {product.title}
-              </h1>
-              <span
-                style={{
-                  display: 'inline-block',
-                  background: '#e8f5e9',
-                  color: '#388e3c',
-                  borderRadius: '6px',
-                  padding: '0.25rem 0.75rem',
-                  marginRight: '1rem',
-                  fontWeight: 'bold',
-                }}
-              >
-                {product.type}
-              </span>
-              <span
-                style={{
-                  display: 'inline-block',
-                  background:
-                    product.category === 'organic' ? '#ffccbc' : '#cfd8dc',
-                  color: product.category === 'organic' ? '#d84315' : '#37474f',
-                  borderRadius: '6px',
-                  padding: '0.25rem 0.75rem',
-                  fontWeight: 'bold',
-                }}
-              >
-                {product.category}
-              </span>
+              {/* Edit/Save/Cancel Buttons - Only for admin/owner */}
+              {userData &&
+                (userData.userType === 'admin' ||
+                  userData.userType === 'owner') && (
+                  <div
+                    style={{
+                      marginBottom: '1rem',
+                      display: 'flex',
+                      gap: '0.5rem',
+                    }}
+                  >
+                    {!isEditMode ? (
+                      <button
+                        onClick={handleEditClick}
+                        style={{
+                          background: '#2196f3',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '0.5rem 1rem',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          fontWeight: 'bold',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                        }}
+                      >
+                        ✏️ EDIT
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={handleSaveProduct}
+                          disabled={isSaving}
+                          style={{
+                            background: isSaving ? '#cccccc' : '#4caf50',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '0.5rem 1rem',
+                            cursor: isSaving ? 'not-allowed' : 'pointer',
+                            fontSize: '0.9rem',
+                            fontWeight: 'bold',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                          }}
+                        >
+                          {isSaving ? '⏳ Saving...' : '💾 SAVE'}
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          disabled={isSaving}
+                          style={{
+                            background: '#757575',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '0.5rem 1rem',
+                            cursor: isSaving ? 'not-allowed' : 'pointer',
+                            fontSize: '0.9rem',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          ✕ CANCEL
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+              {/* Product Title */}
+              {!isEditMode ? (
+                <h1
+                  style={{
+                    color: '#388e3c',
+                    fontSize: '2.5rem',
+                    marginBottom: '0.5rem',
+                  }}
+                >
+                  {product.title}
+                </h1>
+              ) : (
+                <input
+                  type='text'
+                  value={editedProduct?.title || ''}
+                  onChange={(e) =>
+                    handleProductFieldChange('title', e.target.value)
+                  }
+                  style={{
+                    color: '#388e3c',
+                    fontSize: '2.5rem',
+                    marginBottom: '0.5rem',
+                    border: '2px solid #388e3c',
+                    borderRadius: '6px',
+                    padding: '0.25rem 0.5rem',
+                    width: '100%',
+                    fontWeight: 'bold',
+                  }}
+                />
+              )}
+
+              {/* Product Type */}
+              {!isEditMode ? (
+                <span
+                  style={{
+                    display: 'inline-block',
+                    background: '#e8f5e9',
+                    color: '#388e3c',
+                    borderRadius: '6px',
+                    padding: '0.25rem 0.75rem',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  {product.type}
+                </span>
+              ) : (
+                <select
+                  value={editedProduct?.type || ''}
+                  onChange={(e) =>
+                    handleProductFieldChange('type', e.target.value)
+                  }
+                  style={{
+                    background: '#e8f5e9',
+                    color: '#388e3c',
+                    borderRadius: '6px',
+                    padding: '0.25rem 0.75rem',
+                    fontWeight: 'bold',
+                    border: '2px solid #388e3c',
+                    fontSize: '1rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value='grain'>grain</option>
+                  <option value='vegetable'>vegetable</option>
+                  <option value='fruit'>fruit</option>
+                  <option value='spice'>spice</option>
+                  <option value='pulse'>pulse</option>
+                  <option value='dry fruit'>dry fruit</option>
+                  <option value='oil seed'>oil seed</option>
+                  <option value='dairy'>dairy</option>
+                  <option value='other'>other</option>
+                </select>
+              )}
+
+              {/* Product Price */}
               <div style={{ margin: '1rem 0' }}>
-                <strong style={{ color: '#388e3c', fontSize: '1.25rem' }}>
-                  Price: ₹{product.price}
-                </strong>
-              </div>
-              <div style={{ marginBottom: '1rem', color: '#6d4c41' }}>
-                {product.description}
+                {!isEditMode ? (
+                  <strong style={{ color: '#388e3c', fontSize: '1.25rem' }}>
+                    Price: ₹{product.price}
+                  </strong>
+                ) : (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                    }}
+                  >
+                    <strong style={{ color: '#388e3c', fontSize: '1.25rem' }}>
+                      Price: ₹
+                    </strong>
+                    <input
+                      type='text'
+                      value={editedProduct?.price || ''}
+                      onChange={(e) =>
+                        handleProductFieldChange('price', e.target.value)
+                      }
+                      style={{
+                        color: '#388e3c',
+                        fontSize: '1.25rem',
+                        border: '2px solid #388e3c',
+                        borderRadius: '6px',
+                        padding: '0.25rem 0.5rem',
+                        width: '150px',
+                        fontWeight: 'bold',
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
-              {/* ADD Farmer Button */}
-              <button
-                style={{
-                  background: 'linear-gradient(45deg, #388e3c, #2e7d32)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '1rem 2rem',
-                  cursor: 'pointer',
-                  fontSize: '1.1rem',
-                  fontWeight: 'bold',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem',
-                  boxShadow: '0 4px 12px rgba(56, 142, 60, 0.3)',
-                  transition: 'all 0.3s ease',
-                  marginTop: '1.5rem',
-                  minWidth: '200px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow =
-                    '0 6px 16px rgba(56, 142, 60, 0.4)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow =
-                    '0 4px 12px rgba(56, 142, 60, 0.3)';
-                }}
-                onClick={handleAddFarmerClick}
-              >
-                👨‍🌾 ADD Farmer
-              </button>
+              {/* Product Description */}
+              {!isEditMode ? (
+                <div style={{ marginBottom: '1rem', color: '#6d4c41' }}>
+                  {product.description}
+                </div>
+              ) : (
+                <textarea
+                  value={editedProduct?.description || ''}
+                  onChange={(e) =>
+                    handleProductFieldChange('description', e.target.value)
+                  }
+                  style={{
+                    marginBottom: '1rem',
+                    color: '#6d4c41',
+                    border: '2px solid #388e3c',
+                    borderRadius: '6px',
+                    padding: '0.5rem',
+                    width: '100%',
+                    minHeight: '100px',
+                    fontSize: '1rem',
+                    fontFamily: 'inherit',
+                    resize: 'vertical',
+                  }}
+                />
+              )}
+
+              {/* ADD Farmer Button - hide if user already registered */}
+              {!hasUserAlreadyRegistered() && (
+                <button
+                  style={{
+                    background: 'linear-gradient(45deg, #388e3c, #2e7d32)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '1rem 2rem',
+                    cursor: 'pointer',
+                    fontSize: '1.1rem',
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    boxShadow: '0 4px 12px rgba(56, 142, 60, 0.3)',
+                    transition: 'all 0.3s ease',
+                    marginTop: '1.5rem',
+                    minWidth: '200px',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow =
+                      '0 6px 16px rgba(56, 142, 60, 0.4)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow =
+                      '0 4px 12px rgba(56, 142, 60, 0.3)';
+                  }}
+                  onClick={handleAddFarmerClick}
+                >
+                  👨‍🌾 ADD Farmer
+                </button>
+              )}
             </div>
 
             {/* Column 2 - Product Images Carousel */}
@@ -902,24 +1470,42 @@ export default function ProductDetailsPage() {
                   height: '240px',
                 }}
               >
-                <img
-                  src={getProductImage(product.title, currentImageIndex)}
-                  alt={`${product.title} ${currentImageIndex + 1}`}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    borderRadius: '8px',
-                    border: '1px solid #c8e6c9',
-                    opacity: imageLoading ? 0.3 : 1,
-                    transition: 'opacity 0.3s ease',
-                  }}
-                  onLoad={() => setImageLoading(false)}
-                  onError={(e) => {
-                    e.currentTarget.src = '/images/fallback-image.png';
-                    setImageLoading(false);
-                  }}
-                />
+                {product.images && product.images.length > 0 ? (
+                  <img
+                    src={product.images[currentImageIndex]}
+                    alt={`${product.title} ${currentImageIndex + 1}`}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      borderRadius: '8px',
+                      border: '1px solid #c8e6c9',
+                      opacity: imageLoading ? 0.3 : 1,
+                      transition: 'opacity 0.3s ease',
+                    }}
+                    onLoad={() => setImageLoading(false)}
+                    onError={(e) => {
+                      e.currentTarget.src = '/images/fallback-image.png';
+                      setImageLoading(false);
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      background: '#e8f5e9',
+                      borderRadius: '8px',
+                      border: '1px solid #c8e6c9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '4rem',
+                    }}
+                  >
+                    🌾
+                  </div>
+                )}
 
                 {/* Loading Spinner */}
                 {imageLoading && (
@@ -945,117 +1531,125 @@ export default function ProductDetailsPage() {
                   </div>
                 )}
 
-                {/* Navigation Arrows */}
-                <button
-                  onClick={prevImage}
-                  style={{
-                    position: 'absolute',
-                    left: '8px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'rgba(0, 0, 0, 0.8)',
-                    color: 'white',
-                    border: '2px solid white',
-                    borderRadius: '50%',
-                    width: '40px',
-                    height: '40px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                    fontWeight: 'bold',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-                    transition: 'all 0.2s ease',
-                    zIndex: 10,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(0, 0, 0, 0.9)';
-                    e.currentTarget.style.transform =
-                      'translateY(-50%) scale(1.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(0, 0, 0, 0.8)';
-                    e.currentTarget.style.transform =
-                      'translateY(-50%) scale(1)';
-                  }}
-                >
-                  ◀
-                </button>
+                {/* Navigation Arrows - Only show if more than one image */}
+                {product.images && product.images.length > 1 && (
+                  <>
+                    <button
+                      onClick={prevImage}
+                      style={{
+                        position: 'absolute',
+                        left: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'rgba(0, 0, 0, 0.8)',
+                        color: 'white',
+                        border: '2px solid white',
+                        borderRadius: '50%',
+                        width: '40px',
+                        height: '40px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                        transition: 'all 0.2s ease',
+                        zIndex: 10,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(0, 0, 0, 0.9)';
+                        e.currentTarget.style.transform =
+                          'translateY(-50%) scale(1.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(0, 0, 0, 0.8)';
+                        e.currentTarget.style.transform =
+                          'translateY(-50%) scale(1)';
+                      }}
+                    >
+                      ◀
+                    </button>
 
-                <button
-                  onClick={nextImage}
-                  style={{
-                    position: 'absolute',
-                    right: '8px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'rgba(0, 0, 0, 0.8)',
-                    color: 'white',
-                    border: '2px solid white',
-                    borderRadius: '50%',
-                    width: '40px',
-                    height: '40px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                    fontWeight: 'bold',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-                    transition: 'all 0.2s ease',
-                    zIndex: 10,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(0, 0, 0, 0.9)';
-                    e.currentTarget.style.transform =
-                      'translateY(-50%) scale(1.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(0, 0, 0, 0.8)';
-                    e.currentTarget.style.transform =
-                      'translateY(-50%) scale(1)';
-                  }}
-                >
-                  ▶
-                </button>
+                    <button
+                      onClick={nextImage}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'rgba(0, 0, 0, 0.8)',
+                        color: 'white',
+                        border: '2px solid white',
+                        borderRadius: '50%',
+                        width: '40px',
+                        height: '40px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                        transition: 'all 0.2s ease',
+                        zIndex: 10,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(0, 0, 0, 0.9)';
+                        e.currentTarget.style.transform =
+                          'translateY(-50%) scale(1.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(0, 0, 0, 0.8)';
+                        e.currentTarget.style.transform =
+                          'translateY(-50%) scale(1)';
+                      }}
+                    >
+                      ▶
+                    </button>
+                  </>
+                )}
               </div>
 
-              {/* Image Indicators */}
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {Array.from({ length: totalImages }, (_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setCurrentImageIndex(idx)}
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      border: 'none',
-                      background:
-                        idx === currentImageIndex ? '#388e3c' : '#c8e6c9',
-                      cursor: 'pointer',
-                    }}
+              {/* Image Indicators - Only show if more than one image */}
+              {product.images && product.images.length > 1 && (
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {Array.from({ length: totalImages }, (_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentImageIndex(idx)}
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        border: 'none',
+                        background:
+                          idx === currentImageIndex ? '#388e3c' : '#c8e6c9',
+                        cursor: 'pointer',
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Column 3 - Product Video (only show if videos exist) */}
+            {product.videos && product.videos.length > 0 && (
+              <div>
+                <video
+                  width='320'
+                  height='240'
+                  controls
+                  style={{ borderRadius: '8px', border: '1px solid #c8e6c9' }}
+                >
+                  <source
+                    src={product.videos[0]}
+                    type='video/mp4'
                   />
-                ))}
+                  Your browser does not support the video tag.
+                </video>
               </div>
-            </div>
-
-            {/* Column 3 - Product Video */}
-            <div>
-              <video
-                width='320'
-                height='240'
-                controls
-                style={{ borderRadius: '8px', border: '1px solid #c8e6c9' }}
-              >
-                <source
-                  src={getProductVideo(product.title)}
-                  type='video/mp4'
-                />
-                Your browser does not support the video tag.
-              </video>
-            </div>
+            )}
           </div>
         </div>
 
@@ -1125,7 +1719,28 @@ export default function ProductDetailsPage() {
                     className='farmer-header-grid'
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: 'auto 1fr auto auto auto auto',
+                      gridTemplateColumns: (() => {
+                        const isBuyerAdminOwner =
+                          isLoggedIn &&
+                          userData &&
+                          (userData.userType === 'buyer' ||
+                            userData.userType === 'admin' ||
+                            userData.userType === 'owner');
+                        const canEdit = canEditFarmer(farmer);
+
+                        // Base columns: farmer info, price, contact, location, video, photos
+                        // + Edit & Delete if canEdit (2 columns)
+                        // + Shortlist, Express Interest, Request Sample if buyer/admin/owner (3 columns)
+                        if (canEdit && isBuyerAdminOwner) {
+                          return 'auto 1fr auto auto auto auto auto auto auto auto auto';
+                        } else if (canEdit) {
+                          return 'auto 1fr auto auto auto auto auto auto';
+                        } else if (isBuyerAdminOwner) {
+                          return 'auto 1fr auto auto auto auto auto auto auto';
+                        } else {
+                          return 'auto 1fr auto auto auto auto';
+                        }
+                      })(),
                       gap: '1.5rem',
                       alignItems: 'center',
                       marginBottom: '2rem',
@@ -1212,7 +1827,18 @@ export default function ProductDetailsPage() {
                           boxShadow: '0 2px 8px rgba(56, 142, 60, 0.3)',
                         }}
                       >
-                        ₹{farmer.price}/kg
+                        ₹
+                        {(() => {
+                          // Find the matching product in relatedProduct array
+                          const relatedProduct = farmer.relatedProduct?.find(
+                            (p: any) => p.productId === productId
+                          );
+                          // Return PricePerUnit if found, otherwise fallback to farmer.price
+                          return (
+                            relatedProduct?.PricePerUnit ?? farmer.price ?? 0
+                          );
+                        })()}
+                        /kg
                       </div>
                     </div>
 
@@ -1226,8 +1852,8 @@ export default function ProductDetailsPage() {
                         minWidth: '220px',
                       }}
                     >
-                      {revealedContacts.has(idx) ? (
-                        // Show full contact details
+                      {revealedContacts.has(idx) || canEditFarmer(farmer) ? (
+                        // Show full contact details (for buyers who revealed, admins/owners, or the farmer who created it)
                         <div
                           style={{
                             display: 'flex',
@@ -1520,6 +2146,213 @@ export default function ProductDetailsPage() {
                         📸 Photos
                       </button>
                     </div>
+
+                    {/* 7. Edit Button - Only for admin, owner, or the farmer who created this */}
+                    {canEditFarmer(farmer) && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <button
+                          onClick={() => handleEditFarmer(farmer)}
+                          style={{
+                            background: '#ff9800',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '0.75rem 1rem',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                            fontWeight: '600',
+                            boxShadow: '0 2px 8px rgba(255, 152, 0, 0.3)',
+                            transition: 'all 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform =
+                              'translateY(-2px)';
+                            e.currentTarget.style.boxShadow =
+                              '0 4px 12px rgba(255, 152, 0, 0.4)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow =
+                              '0 2px 8px rgba(255, 152, 0, 0.3)';
+                          }}
+                        >
+                          ✏️ EDIT
+                        </button>
+                      </div>
+                    )}
+
+                    {/* 8. Delete Button - Only for admin, owner, or the farmer who created this */}
+                    {canEditFarmer(farmer) && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <button
+                          onClick={() => handleDeleteFarmer(farmer)}
+                          style={{
+                            background: '#f44336',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '0.75rem 1rem',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                            fontWeight: '600',
+                            boxShadow: '0 2px 8px rgba(244, 67, 54, 0.3)',
+                            transition: 'all 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform =
+                              'translateY(-2px)';
+                            e.currentTarget.style.boxShadow =
+                              '0 4px 12px rgba(244, 67, 54, 0.4)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow =
+                              '0 2px 8px rgba(244, 67, 54, 0.3)';
+                          }}
+                        >
+                          🗑️ DELETE
+                        </button>
+                      </div>
+                    )}
+
+                    {/* 9. Shortlist Button - Only for buyer, admin, owner */}
+                    {isLoggedIn &&
+                      userData &&
+                      (userData.userType === 'buyer' ||
+                        userData.userType === 'admin' ||
+                        userData.userType === 'owner') && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <button
+                            onClick={() => handleShortlist(farmer)}
+                            style={{
+                              background: '#9c27b0',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '0.75rem 1rem',
+                              cursor: 'pointer',
+                              fontSize: '0.9rem',
+                              fontWeight: '600',
+                              boxShadow: '0 2px 8px rgba(156, 39, 176, 0.3)',
+                              transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform =
+                                'translateY(-2px)';
+                              e.currentTarget.style.boxShadow =
+                                '0 4px 12px rgba(156, 39, 176, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow =
+                                '0 2px 8px rgba(156, 39, 176, 0.3)';
+                            }}
+                          >
+                            ⭐ Shortlist
+                          </button>
+                        </div>
+                      )}
+
+                    {/* 10. Express Interest Button - Only for buyer, admin, owner */}
+                    {isLoggedIn &&
+                      userData &&
+                      (userData.userType === 'buyer' ||
+                        userData.userType === 'admin' ||
+                        userData.userType === 'owner') && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <button
+                            onClick={() => handleExpressInterest(farmer)}
+                            style={{
+                              background: '#00bcd4',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '0.75rem 1rem',
+                              cursor: 'pointer',
+                              fontSize: '0.9rem',
+                              fontWeight: '600',
+                              boxShadow: '0 2px 8px rgba(0, 188, 212, 0.3)',
+                              transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform =
+                                'translateY(-2px)';
+                              e.currentTarget.style.boxShadow =
+                                '0 4px 12px rgba(0, 188, 212, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow =
+                                '0 2px 8px rgba(0, 188, 212, 0.3)';
+                            }}
+                          >
+                            💼 Express Interest
+                          </button>
+                        </div>
+                      )}
+
+                    {/* 11. Request Sample Button - Only for buyer, admin, owner */}
+                    {isLoggedIn &&
+                      userData &&
+                      (userData.userType === 'buyer' ||
+                        userData.userType === 'admin' ||
+                        userData.userType === 'owner') && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <button
+                            onClick={() => handleRequestSample(farmer)}
+                            style={{
+                              background: '#ff5722',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '0.75rem 1rem',
+                              cursor: 'pointer',
+                              fontSize: '0.9rem',
+                              fontWeight: '600',
+                              boxShadow: '0 2px 8px rgba(255, 87, 34, 0.3)',
+                              transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform =
+                                'translateY(-2px)';
+                              e.currentTarget.style.boxShadow =
+                                '0 4px 12px rgba(255, 87, 34, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow =
+                                '0 2px 8px rgba(255, 87, 34, 0.3)';
+                            }}
+                          >
+                            📦 Request Sample
+                          </button>
+                        </div>
+                      )}
                   </div>
 
                   {/* Information Grid - Single Row Layout */}

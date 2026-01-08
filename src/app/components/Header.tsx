@@ -85,21 +85,59 @@ export default function Header() {
                 gap: '0.25rem',
               }}
             >
-              <span>👤 {userName}</span>
-              <span
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              >
+                <span>👤 {userName}</span>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    color: '#6d4c41',
+                    fontWeight: 'normal',
+                    textTransform: 'capitalize',
+                    background: '#fffde7',
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '12px',
+                    border: '1px solid #c8e6c9',
+                  }}
+                >
+                  {userType === 'farmer'
+                    ? '🌾 Farmer'
+                    : userType === 'buyer'
+                    ? '🛒 Buyer'
+                    : userType === 'admin'
+                    ? '👨‍💼 Admin'
+                    : userType === 'owner'
+                    ? '👑 Owner'
+                    : ''}
+                </span>
+              </div>
+              <a
+                onClick={() => {
+                  const userData = localStorage.getItem('userData');
+                  if (userData) {
+                    const user = JSON.parse(userData);
+                    const userId = user.farmerId || user.buyerId || user.email;
+                    router.push(`/account/${userId}`);
+                  }
+                }}
                 style={{
                   fontSize: '0.75rem',
-                  color: '#6d4c41',
+                  color: '#388e3c',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
                   fontWeight: 'normal',
-                  textTransform: 'capitalize',
-                  background: '#fffde7',
-                  padding: '0.15rem 0.5rem',
-                  borderRadius: '12px',
-                  border: '1px solid #c8e6c9',
+                  transition: 'color 0.3s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#2e7d32';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = '#388e3c';
                 }}
               >
-                {userType === 'farmer' ? '🌾 Farmer' : '🛒 Buyer'}
-              </span>
+                📊 My Account
+              </a>
               {(!emailVerified || !userVerified) && (
                 <span>
                   ⚠️{' '}

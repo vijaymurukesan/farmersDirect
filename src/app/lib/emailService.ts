@@ -651,3 +651,256 @@ export const sendDocumentRejectionEmail = async (
     throw error;
   }
 };
+
+// Send product rejection email
+export const sendProductRejectionEmail = async (
+  to: string,
+  productTitle: string,
+  rejectionReason: string,
+  userType: string
+) => {
+  const transporter = createTransporter();
+  const dashboardLink = `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/`;
+
+  const mailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: to,
+    subject: 'Product Submission Rejected - Farmers Direct',
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background: #ffebee;
+              padding: 20px;
+              text-align: center;
+              border-radius: 8px 8px 0 0;
+              border-top: 4px solid #f44336;
+            }
+            .header h1 {
+              color: #d32f2f;
+              margin: 0;
+              font-size: 24px;
+            }
+            .header .icon {
+              font-size: 48px;
+              margin-bottom: 10px;
+            }
+            .content {
+              background: #fff;
+              padding: 30px;
+              border: 2px solid #ffcdd2;
+              border-radius: 0 0 8px 8px;
+            }
+            .alert-box {
+              background: #fff3e0;
+              border-left: 4px solid #ff9800;
+              padding: 15px;
+              border-radius: 4px;
+              margin: 20px 0;
+            }
+            .alert-box h3 {
+              color: #f57c00;
+              margin: 0 0 10px 0;
+              font-size: 18px;
+            }
+            .product-info {
+              background: #f1f8e9;
+              border: 2px solid #c8e6c9;
+              padding: 15px;
+              border-radius: 8px;
+              margin: 20px 0;
+            }
+            .product-info h3 {
+              color: #388e3c;
+              margin: 0 0 10px 0;
+            }
+            .product-info p {
+              margin: 5px 0;
+              color: #6d4c41;
+              font-size: 16px;
+              font-weight: bold;
+            }
+            .reason-box {
+              background: #ffebee;
+              border: 2px solid #ef9a9a;
+              padding: 15px;
+              border-radius: 8px;
+              margin: 15px 0;
+            }
+            .reason-box strong {
+              color: #d32f2f;
+              display: block;
+              margin-bottom: 8px;
+              font-size: 16px;
+            }
+            .reason-box p {
+              margin: 0;
+              color: #333;
+              font-size: 15px;
+              line-height: 1.6;
+            }
+            .button {
+              display: inline-block;
+              padding: 14px 35px;
+              background: #388e3c;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+              box-shadow: 0 4px 12px rgba(56, 142, 60, 0.3);
+            }
+            .button:hover {
+              background: #2e7d32;
+            }
+            .steps {
+              background: #e8f5e9;
+              padding: 20px;
+              border-radius: 8px;
+              margin: 20px 0;
+            }
+            .steps h3 {
+              color: #388e3c;
+              margin-top: 0;
+            }
+            .steps ol {
+              margin: 10px 0;
+              padding-left: 20px;
+            }
+            .steps li {
+              margin: 10px 0;
+              color: #6d4c41;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 30px;
+              color: #6d4c41;
+              font-size: 12px;
+            }
+            .divider {
+              border-top: 2px dashed #c8e6c9;
+              margin: 25px 0;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="icon">🚫</div>
+            <h1>Product Submission Rejected</h1>
+          </div>
+          <div class="content">
+            <p>Dear User,</p>
+            
+            <p>Thank you for submitting a product to Farmers Direct marketplace.</p>
+            
+            <div class="alert-box">
+              <h3>📦 Product Review Update</h3>
+              <p>We've reviewed your product submission and unfortunately, we cannot approve it at this time.</p>
+            </div>
+
+            <div class="product-info">
+              <h3>Rejected Product:</h3>
+              <p>${productTitle}</p>
+            </div>
+
+            <div class="reason-box">
+              <strong>Rejection Reason:</strong>
+              <p>${rejectionReason}</p>
+            </div>
+
+            <div class="divider"></div>
+            
+            <div class="steps">
+              <h3>What You Can Do:</h3>
+              <ol>
+                <li>Review the rejection reason carefully</li>
+                <li>Make necessary improvements or corrections</li>
+                <li>Submit a new product with accurate information</li>
+                <li>Ensure all product details meet our quality standards</li>
+              </ol>
+            </div>
+            
+            <p style="text-align: center; margin: 25px 0;">
+              You can submit a new product or browse existing products:
+            </p>
+            
+            <div style="text-align: center;">
+              <a href="${dashboardLink}" class="button">
+                🌱 Visit Dashboard
+              </a>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <p style="color: #6d4c41; font-size: 14px; margin-top: 25px;">
+              <strong>Need Help?</strong><br>
+              If you have any questions about the rejection reason or need assistance, please don't hesitate to contact our support team.
+            </p>
+            
+            <p style="margin-top: 20px;">
+              Thank you for your understanding and continued participation in Farmers Direct! 🌱
+            </p>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+            <p style="margin-top: 10px;">
+              This is an automated message. Please do not reply to this email.
+            </p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Product Submission Rejected
+      
+      Dear User,
+      
+      Thank you for submitting a product to Farmers Direct marketplace.
+      
+      Product Review Update
+      We've reviewed your product submission and unfortunately, we cannot approve it at this time.
+      
+      Rejected Product: ${productTitle}
+      
+      Rejection Reason: ${rejectionReason}
+      
+      What You Can Do:
+      1. Review the rejection reason carefully
+      2. Make necessary improvements or corrections
+      3. Submit a new product with accurate information
+      4. Ensure all product details meet our quality standards
+      
+      You can visit our dashboard to submit a new product or browse existing products.
+      
+      Dashboard Link: ${dashboardLink}
+      
+      Need Help?
+      If you have any questions about the rejection reason or need assistance, please contact our support team.
+      
+      Thank you for your understanding and continued participation in Farmers Direct!
+      
+      © 2026 Farmers Direct. All rights reserved.
+      This is an automated message. Please do not reply to this email.
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Product rejection email sent successfully:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error sending product rejection email:', error);
+    throw error;
+  }
+};
+
