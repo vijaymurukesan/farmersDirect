@@ -1899,7 +1899,8 @@ export default function ProductDetailsPage() {
                         {(() => {
                           // Find the matching product in relatedProduct array
                           const relatedProduct = farmer.relatedProduct?.find(
-                            (p: { productId: string }) => p.productId === productId
+                            (p: { productId: string; PricePerUnit?: number }) =>
+                              p.productId === productId
                           );
                           // Return PricePerUnit if found, otherwise fallback to farmer.price
                           return (
