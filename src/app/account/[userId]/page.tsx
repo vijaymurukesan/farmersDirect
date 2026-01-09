@@ -3167,6 +3167,168 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                       been submitted and is under review by our
                                       team. You will be notified once verified.
                                     </div>
+
+                                    {/* Transaction Details */}
+                                    {interaction.payment && (
+                                      <div
+                                        style={{
+                                          background: '#e3f2fd',
+                                          padding: '1rem',
+                                          borderRadius: '8px',
+                                          marginBottom: '1rem',
+                                          border: '2px solid #1976d2',
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            fontSize: '0.9rem',
+                                            fontWeight: 'bold',
+                                            color: '#1565c0',
+                                            marginBottom: '0.75rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                          }}
+                                        >
+                                          💳 Transaction Details
+                                        </div>
+                                        <div
+                                          style={{
+                                            display: 'grid',
+                                            gap: '0.5rem',
+                                            fontSize: '0.85rem',
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              display: 'grid',
+                                              gridTemplateColumns: '140px 1fr',
+                                              gap: '0.5rem',
+                                              padding: '0.5rem 0',
+                                              borderBottom: '1px solid #bbdefb',
+                                            }}
+                                          >
+                                            <span style={{ color: '#666' }}>
+                                              Transaction ID:
+                                            </span>
+                                            <span
+                                              style={{
+                                                fontWeight: 'bold',
+                                                fontFamily: 'monospace',
+                                                color: '#1976d2',
+                                              }}
+                                            >
+                                              {
+                                                interaction.payment
+                                                  .transactionId
+                                              }
+                                            </span>
+                                          </div>
+                                          <div
+                                            style={{
+                                              display: 'grid',
+                                              gridTemplateColumns: '140px 1fr',
+                                              gap: '0.5rem',
+                                              padding: '0.5rem 0',
+                                              borderBottom: '1px solid #bbdefb',
+                                            }}
+                                          >
+                                            <span style={{ color: '#666' }}>
+                                              Total Amount:
+                                            </span>
+                                            <span
+                                              style={{
+                                                fontWeight: 'bold',
+                                                color: '#1565c0',
+                                              }}
+                                            >
+                                              ₹
+                                              {interaction.payment.totalAmount?.toFixed(
+                                                2
+                                              ) || '0.00'}
+                                            </span>
+                                          </div>
+                                          <div
+                                            style={{
+                                              display: 'grid',
+                                              gridTemplateColumns: '140px 1fr',
+                                              gap: '0.5rem',
+                                              padding: '0.5rem 0',
+                                              borderBottom: '1px solid #bbdefb',
+                                            }}
+                                          >
+                                            <span style={{ color: '#666' }}>
+                                              10% Advance Paid:
+                                            </span>
+                                            <span
+                                              style={{
+                                                fontWeight: 'bold',
+                                                color: '#2e7d32',
+                                              }}
+                                            >
+                                              ₹
+                                              {interaction.payment.advanceAmount?.toFixed(
+                                                2
+                                              ) || '0.00'}
+                                            </span>
+                                          </div>
+                                          <div
+                                            style={{
+                                              display: 'grid',
+                                              gridTemplateColumns: '140px 1fr',
+                                              gap: '0.5rem',
+                                              padding: '0.5rem 0',
+                                              borderBottom: '1px solid #bbdefb',
+                                            }}
+                                          >
+                                            <span style={{ color: '#666' }}>
+                                              Balance (90%):
+                                            </span>
+                                            <span
+                                              style={{
+                                                fontWeight: 'bold',
+                                                color: '#d32f2f',
+                                              }}
+                                            >
+                                              ₹
+                                              {(
+                                                (interaction.payment
+                                                  .totalAmount || 0) -
+                                                (interaction.payment
+                                                  .advanceAmount || 0)
+                                              ).toFixed(2)}
+                                            </span>
+                                          </div>
+                                          {interaction.payment.submittedAt && (
+                                            <div
+                                              style={{
+                                                display: 'grid',
+                                                gridTemplateColumns:
+                                                  '140px 1fr',
+                                                gap: '0.5rem',
+                                                padding: '0.5rem 0',
+                                              }}
+                                            >
+                                              <span style={{ color: '#666' }}>
+                                                Submitted On:
+                                              </span>
+                                              <span
+                                                style={{ fontWeight: '500' }}
+                                              >
+                                                {new Date(
+                                                  interaction.payment.submittedAt
+                                                ).toLocaleDateString('en-IN', {
+                                                  day: 'numeric',
+                                                  month: 'long',
+                                                  year: 'numeric',
+                                                })}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+
                                     {interaction.payment?.screenshotUrl && (
                                       <div
                                         style={{

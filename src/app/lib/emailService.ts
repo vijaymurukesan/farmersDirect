@@ -1472,7 +1472,13 @@ export const sendContractPdfEmail = async (
   farmerName: string,
   buyerName: string,
   productName: string,
-  contractPdfBuffer: Buffer
+  contractPdfBuffer: Buffer,
+  transactionDetails?: {
+    transactionId: string;
+    totalAmount: number;
+    advanceAmount: number;
+    paymentDate?: string;
+  }
 ) => {
   const transporter = createTransporter();
 
@@ -1481,6 +1487,18 @@ export const sendContractPdfEmail = async (
     month: 'long',
     year: 'numeric',
   });
+
+  // Format currency for Indian Rupees
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(amount);
+  };
+
+  const balanceAmount = transactionDetails ? transactionDetails.totalAmount - transactionDetails.advanceAmount : 0;
 
   // Email to Farmer
   const farmerMailOptions = {
@@ -1576,7 +1594,40 @@ export const sendContractPdfEmail = async (
               <p style="margin: 5px 0 0 0;"><strong>Status:</strong> Ready for Delivery</p>
             </div>
 
+            ${transactionDetails ? `
             <div class="info-box">
+              <h3 style="color: #1565c0; margin: 0 0 15px 0;">💳 Transaction Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;"><strong>Transaction ID:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0; text-align: right; font-family: monospace; color: #1976d2;">${transactionDetails.transactionId}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;"><strong>Total Contract Value:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0; text-align: right; font-weight: bold;">${formatCurrency(transactionDetails.totalAmount)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;"><strong>10% Advance Payment:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0; text-align: right; color: #d32f2f; font-weight: bold;">${formatCurrency(transactionDetails.advanceAmount)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;"><strong>90% Balance Payment:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0; text-align: right; color: #2e7d32; font-weight: bold;">${formatCurrency(balanceAmount)}</td>
+                </tr>
+                ${transactionDetails.paymentDate ? `
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Payment Date:</strong></td>
+                  <td style="padding: 8px 0; text-align: right;">${new Date(transactionDetails.paymentDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+                </tr>
+                ` : ''}
+              </table>
+              <p style="margin: 15px 0 0 0; padding: 10px; background: #fff3cd; border-left: 3px solid #ffc107; font-size: 14px;">
+                <strong>⚠️ Important:</strong> Balance amount (${formatCurrency(balanceAmount)}) must be paid before delivery.
+              </p>
+            </div>
+            ` : ''}
+
+            <div class="info-box">${transactionDetails ? '' : `
               <p style="margin: 0; font-weight: bold; color: #1565c0;">📎 Contract PDF Attached</p>
               <p style="margin: 10px 0 0 0; font-size: 14px;">
                 Please find the official contract agreement attached to this email. This document includes:
@@ -1587,6 +1638,7 @@ export const sendContractPdfEmail = async (
                 <li>Company authorization and witness</li>
                 <li>Official Farmers Direct seal</li>
               </ul>
+            `}
             </div>
 
             <p><strong>Next Steps:</strong></p>
@@ -1627,6 +1679,17 @@ export const sendContractPdfEmail = async (
       Buyer: ${buyerName}
       Status: Ready for Delivery
       Date: ${today}
+      ${transactionDetails ? `
+      
+      TRANSACTION DETAILS:
+      Transaction ID: ${transactionDetails.transactionId}
+      Total Contract Value: ${formatCurrency(transactionDetails.totalAmount)}
+      10% Advance Payment: ${formatCurrency(transactionDetails.advanceAmount)}
+      90% Balance Payment: ${formatCurrency(balanceAmount)}
+      ${transactionDetails.paymentDate ? `Payment Date: ${new Date(transactionDetails.paymentDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}
+      
+      IMPORTANT: Balance amount (${formatCurrency(balanceAmount)}) must be paid before delivery.
+      ` : ''}
       
       The official contract PDF is attached to this email. It includes:
       - Complete terms and conditions
@@ -1742,7 +1805,40 @@ export const sendContractPdfEmail = async (
               <p style="margin: 5px 0 0 0;"><strong>Status:</strong> Awaiting Delivery</p>
             </div>
 
-            <div class="info-box">
+            ${transactionDetails ? `
+            <div class="info-box" style="background: #e8f5e9;">
+              <h3 style="color: #2e7d32; margin: 0 0 15px 0;">💳 Transaction Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9;"><strong>Transaction ID:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9; text-align: right; font-family: monospace; color: #1976d2;">${transactionDetails.transactionId}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9;"><strong>Total Contract Value:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9; text-align: right; font-weight: bold;">${formatCurrency(transactionDetails.totalAmount)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9;"><strong>10% Advance Paid:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9; text-align: right; color: #2e7d32; font-weight: bold;">${formatCurrency(transactionDetails.advanceAmount)} ✅</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9;"><strong>Remaining Balance (90%):</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9; text-align: right; color: #d32f2f; font-weight: bold;">${formatCurrency(balanceAmount)}</td>
+                </tr>
+                ${transactionDetails.paymentDate ? `
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Payment Date:</strong></td>
+                  <td style="padding: 8px 0; text-align: right;">${new Date(transactionDetails.paymentDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+                </tr>
+                ` : ''}
+              </table>
+              <p style="margin: 15px 0 0 0; padding: 10px; background: #fff9c4; border-left: 3px solid #f57f17; font-size: 14px;">
+                <strong>📌 Reminder:</strong> Please complete the balance payment of ${formatCurrency(balanceAmount)} before delivery as per contract terms.
+              </p>
+            </div>
+            ` : ''}
+
+            <div class="info-box">${transactionDetails ? '' : `
               <p style="margin: 0; font-weight: bold; color: #2e7d32;">📎 Contract PDF Attached</p>
               <p style="margin: 10px 0 0 0; font-size: 14px;">
                 Please find the official contract agreement attached to this email. This document includes:
@@ -1753,6 +1849,7 @@ export const sendContractPdfEmail = async (
                 <li>Company authorization and witness</li>
                 <li>Official Farmers Direct seal</li>
               </ul>
+            `}
             </div>
 
             <p><strong>Next Steps:</strong></p>
@@ -1793,6 +1890,17 @@ export const sendContractPdfEmail = async (
       Seller: ${farmerName}
       Status: Awaiting Delivery
       Date: ${today}
+      ${transactionDetails ? `
+      
+      TRANSACTION DETAILS:
+      Transaction ID: ${transactionDetails.transactionId}
+      Total Contract Value: ${formatCurrency(transactionDetails.totalAmount)}
+      10% Advance Paid: ${formatCurrency(transactionDetails.advanceAmount)} ✅
+      Remaining Balance (90%): ${formatCurrency(balanceAmount)}
+      ${transactionDetails.paymentDate ? `Payment Date: ${new Date(transactionDetails.paymentDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}
+      
+      REMINDER: Please complete the balance payment of ${formatCurrency(balanceAmount)} before delivery as per contract terms.
+      ` : ''}
       
       The official contract PDF is attached to this email. It includes:
       - Complete terms and conditions

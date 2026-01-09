@@ -465,7 +465,16 @@ export async function PUT(req: NextRequest) {
         const { generateContractPDF } = await import('@/app/lib/contractPdfGenerator');
         const { sendContractPdfEmail } = await import('@/app/lib/emailService');
         
-        const contractPdfBuffer = await generateContractPDF(interaction);
+        // Type assertion for the interaction object
+        const contractPdfBuffer = await generateContractPDF(interaction as any);
+        
+        // Prepare transaction details for email
+        const transactionDetails = interaction.payment ? {
+          transactionId: interaction.payment.transactionId || 'N/A',
+          totalAmount: interaction.payment.totalAmount || 0,
+          advanceAmount: interaction.payment.advanceAmount || 0,
+          paymentDate: interaction.payment.submittedAt || new Date().toISOString()
+        } : undefined;
         
         await sendContractPdfEmail(
           interaction.farmer?.email || '',
@@ -473,13 +482,22 @@ export async function PUT(req: NextRequest) {
           interaction.farmer?.contactPerson || 'Farmer',
           interaction.buyer?.fullName || 'Buyer',
           interaction.product?.productName || 'Product',
-          contractPdfBuffer
+          contractPdfBuffer,
+          transactionDetails
         );
         
-        console.log('Contract PDF generated and emailed to both parties');
+        console.log('✅ Contract PDF generated and emailed to both parties successfully');
+        console.log(`   - Farmer: ${interaction.farmer?.email}`);
+        console.log(`   - Buyer: ${interaction.buyer?.email}`);
+        if (transactionDetails) {
+          console.log(`   - Transaction ID: ${transactionDetails.transactionId}`);
+          console.log(`   - Total Amount: ₹${transactionDetails.totalAmount}`);
+          console.log(`   - Advance (10%): ₹${transactionDetails.advanceAmount}`);
+        }
       } catch (emailError) {
         // Log but don't fail the payment approval
-        console.error('Failed to send contract PDF emails:', emailError);
+        console.error('⚠️ Failed to send contract PDF emails:', emailError);
+        console.error('   Payment approval will still proceed, but emails were not sent');
       }
 
       console.log('Payment approved for interaction:', interactionId, '- Status updated to awaiting-delivery');
