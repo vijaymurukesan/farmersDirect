@@ -150,7 +150,13 @@ export default function ProductDetailsPage() {
 
   // User authentication state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userData, setUserData] = useState<any>(null);
+  const [userData, setUserData] = useState<{
+    userType?: string;
+    farmerId?: string;
+    buyerId?: string;
+    email?: string;
+    fullName?: string;
+  } | null>(null);
   const [accessDeniedModal, setAccessDeniedModal] = useState(false);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState('');
   const [revealedContacts, setRevealedContacts] = useState<Set<number>>(
@@ -307,8 +313,8 @@ export default function ProductDetailsPage() {
       // Match by farmerId (if both exist)
       if (
         userData.farmerId &&
-        (farmer as any).farmerId &&
-        userData.farmerId === (farmer as any).farmerId
+        farmer.farmerId &&
+        userData.farmerId === farmer.farmerId
       ) {
         return true;
       }
@@ -529,8 +535,8 @@ export default function ProductDetailsPage() {
     if (!interactionModal.farmer || !userData) return;
 
     const farmer = interactionModal.farmer;
-    const matchedProduct = (farmer as any).relatedProduct?.find(
-      (p: any) => p.productId === productId
+    const matchedProduct = farmer.relatedProduct?.find(
+      (p: { productId: string }) => p.productId === productId
     );
 
     const interactionData = {
@@ -603,8 +609,8 @@ export default function ProductDetailsPage() {
     if (!interactionModal.farmer || !userData) return;
 
     const farmer = interactionModal.farmer;
-    const matchedProduct = (farmer as any).relatedProduct?.find(
-      (p: any) => p.productId === productId
+    const matchedProduct = farmer.relatedProduct?.find(
+      (p: { productId: string }) => p.productId === productId
     );
 
     const interactionData = {
@@ -694,8 +700,8 @@ export default function ProductDetailsPage() {
     }
 
     const farmer = interactionModal.farmer;
-    const matchedProduct = (farmer as any).relatedProduct?.find(
-      (p: any) => p.productId === productId
+    const matchedProduct = farmer.relatedProduct?.find(
+      (p: { productId: string }) => p.productId === productId
     );
 
     const interactionData = {
@@ -1893,7 +1899,7 @@ export default function ProductDetailsPage() {
                         {(() => {
                           // Find the matching product in relatedProduct array
                           const relatedProduct = farmer.relatedProduct?.find(
-                            (p: any) => p.productId === productId
+                            (p: { productId: string }) => p.productId === productId
                           );
                           // Return PricePerUnit if found, otherwise fallback to farmer.price
                           return (
