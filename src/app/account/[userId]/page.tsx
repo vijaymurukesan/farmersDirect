@@ -4756,7 +4756,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                     }}
                                                   >
                                                     ₹
-                                                    {interaction.paymentBalance.advanceAmount?.toFixed(
+                                                    {interaction.paymentBalance.balanceAmount?.toFixed(
                                                       2
                                                     )}{' '}
                                                     (90%)
