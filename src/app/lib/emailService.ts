@@ -904,6 +904,307 @@ export const sendProductRejectionEmail = async (
   }
 };
 
+// Send delivery notification email to buyer
+export const sendDeliveryNotificationEmail = async (
+  buyerEmail: string,
+  farmerName: string,
+  buyerName: string,
+  productName: string,
+  balanceAmount: number,
+  transactionReference: string
+) => {
+  const transporter = createTransporter();
+
+  const formatCurrency = (amount: number): string => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  const mailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: buyerEmail,
+    subject: `🚚 Product Ready for Delivery - ${productName}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+              padding: 20px;
+              text-align: center;
+              border-radius: 8px 8px 0 0;
+              border: 2px solid #ff9800;
+            }
+            .header h1 {
+              color: #e65100;
+              margin: 0;
+              font-size: 24px;
+            }
+            .content {
+              background: #fff;
+              padding: 30px;
+              border: 2px solid #ff9800;
+              border-top: none;
+              border-radius: 0 0 8px 8px;
+            }
+            .alert-box {
+              background: #fff9c4;
+              border: 2px solid #f57f17;
+              padding: 20px;
+              border-radius: 8px;
+              margin: 20px 0;
+              text-align: center;
+            }
+            .truck-icon {
+              font-size: 48px;
+              margin-bottom: 10px;
+            }
+            .bank-details {
+              background: #e8f5e9;
+              border: 2px solid #4caf50;
+              padding: 15px;
+              border-radius: 8px;
+              margin: 20px 0;
+            }
+            .bank-details h3 {
+              color: #2e7d32;
+              margin-top: 0;
+            }
+            .detail-row {
+              display: flex;
+              justify-content: space-between;
+              padding: 8px 0;
+              border-bottom: 1px solid #c8e6c9;
+            }
+            .detail-row:last-child {
+              border-bottom: none;
+            }
+            .detail-label {
+              font-weight: bold;
+              color: #666;
+            }
+            .detail-value {
+              color: #000;
+              font-family: monospace;
+            }
+            .amount-box {
+              background: #ffebee;
+              border: 2px solid #d32f2f;
+              padding: 20px;
+              border-radius: 8px;
+              text-align: center;
+              margin: 20px 0;
+            }
+            .amount-box .label {
+              font-size: 14px;
+              color: #666;
+              margin-bottom: 8px;
+            }
+            .amount-box .amount {
+              font-size: 36px;
+              font-weight: bold;
+              color: #d32f2f;
+            }
+            .transaction-ref {
+              background: #e3f2fd;
+              border: 2px solid #1565c0;
+              padding: 15px;
+              border-radius: 8px;
+              margin: 20px 0;
+              text-align: center;
+            }
+            .transaction-ref .ref-id {
+              font-size: 20px;
+              font-family: monospace;
+              font-weight: bold;
+              color: #1565c0;
+              letter-spacing: 2px;
+              background: white;
+              padding: 10px;
+              border-radius: 4px;
+              display: inline-block;
+              margin-top: 10px;
+            }
+            .button {
+              display: inline-block;
+              padding: 15px 30px;
+              background: #ff9800;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+              font-size: 16px;
+            }
+            .button:hover {
+              background: #f57c00;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 20px;
+              color: #6d4c41;
+              font-size: 12px;
+            }
+            .warning {
+              background: #fff3cd;
+              border: 1px solid #ffc107;
+              padding: 10px;
+              border-radius: 4px;
+              margin-top: 20px;
+              font-size: 14px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🌱 Farmers Direct</h1>
+          </div>
+          <div class="content">
+            <div class="alert-box">
+              <div class="truck-icon">🚚</div>
+              <h2 style="color: #e65100; margin: 10px 0;">Product Ready for Delivery!</h2>
+              <p style="color: #6d4c41; margin: 5px 0;">
+                <strong>${farmerName}</strong> has notified that your order is ready for delivery.
+              </p>
+            </div>
+
+            <p>Dear ${buyerName},</p>
+            
+            <p>Great news! The farmer has prepared your order and the product is ready for delivery:</p>
+            
+            <p style="font-size: 18px; color: #388e3c; font-weight: bold; text-align: center; padding: 15px; background: #e8f5e9; border-radius: 8px;">
+              📦 ${productName}
+            </p>
+
+            <p><strong>Next Step: Complete Balance Payment (90%)</strong></p>
+            <p>To proceed with delivery, please complete the remaining 90% balance payment using the details below:</p>
+
+            <div class="amount-box">
+              <div class="label">Balance Payment Amount (90%)</div>
+              <div class="amount">${formatCurrency(balanceAmount)}</div>
+            </div>
+
+            <div class="bank-details">
+              <h3>🏦 Bank Transfer Details</h3>
+              <div class="detail-row">
+                <span class="detail-label">Bank Name:</span>
+                <span class="detail-value">State Bank of India</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Account Name:</span>
+                <span class="detail-value">Farmers Direct Pvt Ltd</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Account Number:</span>
+                <span class="detail-value">1234567890123456</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">IFSC Code:</span>
+                <span class="detail-value">SBIN0001234</span>
+              </div>
+            </div>
+
+            <div class="transaction-ref">
+              <strong style="color: #1565c0;">📋 Transaction Reference</strong>
+              <br/>
+              <small style="color: #666;">(Use this in your payment remarks)</small>
+              <div class="ref-id">${transactionReference}</div>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login" class="button">
+                💰 Submit Balance Payment
+              </a>
+            </div>
+
+            <div class="warning">
+              <strong>⚠️ Important:</strong>
+              <ul style="margin: 10px 0; padding-left: 20px;">
+                <li>Make the payment to the bank account mentioned above</li>
+                <li>Use the transaction reference in your payment remarks</li>
+                <li>Upload payment screenshot in your account dashboard</li>
+                <li>Delivery will proceed after payment verification</li>
+              </ul>
+            </div>
+
+            <p style="margin-top: 30px;">If you have any questions, please contact us immediately.</p>
+            
+            <p style="margin-top: 20px;">
+              Best regards,<br/>
+              <strong>Farmers Direct Team</strong>
+            </p>
+          </div>
+          <div class="footer">
+            <p>This is an automated notification from Farmers Direct.</p>
+            <p>© 2026 Farmers Direct. All rights reserved.</p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+Product Ready for Delivery - Farmers Direct
+
+Dear ${buyerName},
+
+Great news! ${farmerName} has notified that your order is ready for delivery.
+
+Product: ${productName}
+
+Next Step: Complete Balance Payment (90%)
+
+Balance Amount: ${formatCurrency(balanceAmount)}
+
+Bank Transfer Details:
+- Bank Name: State Bank of India
+- Account Name: Farmers Direct Pvt Ltd
+- Account Number: 1234567890123456
+- IFSC Code: SBIN0001234
+
+Transaction Reference (use in payment remarks): ${transactionReference}
+
+Please:
+1. Make the payment to the above bank account
+2. Use the transaction reference in your payment remarks
+3. Upload payment screenshot in your account dashboard
+4. Delivery will proceed after payment verification
+
+Login to your account to submit the balance payment:
+${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login
+
+If you have any questions, please contact us immediately.
+
+Best regards,
+Farmers Direct Team
+
+---
+This is an automated notification from Farmers Direct.
+© 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Delivery notification email sent successfully:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error sending delivery notification email:', error);
+    throw error;
+  }
+};
+
 // Send interaction acceptance email (when both parties accept)
 export const sendInteractionAcceptanceEmail = async (
   farmerEmail: string,
@@ -1931,6 +2232,398 @@ export const sendContractPdfEmail = async (
     return { success: true };
   } catch (error) {
     console.error('Error sending contract PDF emails:', error);
+    throw error;
+  }
+};
+
+// Send goods delivered notification to buyer
+export const sendGoodsDeliveredEmail = async (
+  buyerEmail: string,
+  farmerName: string,
+  buyerName: string,
+  productName: string,
+  balanceAmount: number,
+  transactionId: string
+) => {
+  const transporter = createTransporter();
+  const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const mailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: buyerEmail,
+    subject: `🚚 Goods Delivered - Action Required: Confirm Receipt - Farmers Direct`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%); padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .header h1 { color: white; margin: 0; font-size: 28px; }
+            .content { background: white; padding: 30px; border: 1px solid #e0e0e0; }
+            .highlight-box { background: #fff9c4; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f57f17; }
+            .info-box { background: #e8f5e9; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #43a047; }
+            .button { display: inline-block; background: #ff9800; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0; }
+            .footer { background: #f5f5f5; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🚚 Goods Delivered</h1>
+          </div>
+          <div class="content">
+            <p>Dear <strong>${buyerName}</strong>,</p>
+            
+            <p>Good news! The farmer has marked your order as <strong>delivered</strong>.</p>
+            
+            <div class="highlight-box">
+              <h3 style="color: #f57f17; margin: 0 0 10px 0;">⏳ Action Required</h3>
+              <p style="margin: 0; font-size: 16px; font-weight: bold;">Please confirm receipt of goods and release the balance payment to the farmer.</p>
+            </div>
+
+            <div class="info-box">
+              <h3 style="color: #2e7d32; margin: 0 0 15px 0;">📦 Delivery Details</h3>
+              <p style="margin: 5px 0;"><strong>Product:</strong> ${productName}</p>
+              <p style="margin: 5px 0;"><strong>Farmer:</strong> ${farmerName}</p>
+              <p style="margin: 5px 0;"><strong>Delivery Date:</strong> ${today}</p>
+              <p style="margin: 5px 0;"><strong>Balance Amount:</strong> <span style="color: #d32f2f; font-weight: bold; font-size: 18px;">${formatCurrency(balanceAmount)}</span></p>
+              <p style="margin: 5px 0;"><strong>Transaction ID:</strong> <code style="background: #e3f2fd; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${transactionId}</code></p>
+            </div>
+
+            <p><strong>What to do next:</strong></p>
+            <ol style="line-height: 1.8;">
+              <li>Verify that you have received the goods in good condition</li>
+              <li>Log in to your Farmers Direct account</li>
+              <li>Click on "Confirm Delivery & Release Payment"</li>
+              <li>The balance payment will be released to the farmer</li>
+            </ol>
+
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login" class="button">
+                ✅ Confirm Receipt & Release Payment
+              </a>
+            </div>
+
+            <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #d32f2f;">
+              <p style="margin: 0; font-size: 14px;">
+                <strong>⚠️ Important:</strong> Please confirm receipt only if you have actually received the goods and verified their condition. Once confirmed, the balance payment will be released to the farmer.
+              </p>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+            <p style="margin-top: 10px;">This is an automated message. Please do not reply to this email.</p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Goods Delivered
+      
+      Dear ${buyerName},
+      
+      Good news! The farmer has marked your order as delivered.
+      
+      ACTION REQUIRED: Please confirm receipt of goods and release the balance payment to the farmer.
+      
+      DELIVERY DETAILS:
+      Product: ${productName}
+      Farmer: ${farmerName}
+      Delivery Date: ${today}
+      Balance Amount: ${formatCurrency(balanceAmount)}
+      Transaction ID: ${transactionId}
+      
+      What to do next:
+      1. Verify that you have received the goods in good condition
+      2. Log in to your Farmers Direct account
+      3. Click on "Confirm Delivery & Release Payment"
+      4. The balance payment will be released to the farmer
+      
+      Dashboard: ${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login
+      
+      IMPORTANT: Please confirm receipt only if you have actually received the goods and verified their condition. Once confirmed, the balance payment will be released to the farmer.
+      
+      © 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('Goods delivered notification email sent successfully to buyer');
+    return { success: true };
+  } catch (error) {
+    console.error('Error sending goods delivered notification email:', error);
+    throw error;
+  }
+};
+
+// Send payment released notification to farmer
+export const sendPaymentReleasedEmail = async (
+  farmerEmail: string,
+  buyerName: string,
+  farmerName: string,
+  productName: string,
+  balanceAmount: number,
+  transactionId: string
+) => {
+  const transporter = createTransporter();
+  const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const mailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: farmerEmail,
+    subject: `🎉 Payment Released - Transaction Completed - Farmers Direct`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%); padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .header h1 { color: white; margin: 0; font-size: 28px; }
+            .content { background: white; padding: 30px; border: 1px solid #e0e0e0; }
+            .success-box { background: #e8f5e9; padding: 25px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #43a047; text-align: center; }
+            .info-box { background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .button { display: inline-block; background: #43a047; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0; }
+            .footer { background: #f5f5f5; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🎉 Payment Released!</h1>
+          </div>
+          <div class="content">
+            <p>Dear <strong>${farmerName}</strong>,</p>
+            
+            <p>Congratulations! The buyer has confirmed receipt of the goods, and the balance payment has been released.</p>
+            
+            <div class="success-box">
+              <div style="font-size: 48px; margin-bottom: 10px;">💰</div>
+              <h2 style="color: #2e7d32; margin: 0 0 10px 0;">Payment Released Successfully</h2>
+              <p style="font-size: 28px; font-weight: bold; color: #2e7d32; margin: 10px 0;">${formatCurrency(balanceAmount)}</p>
+              <p style="margin: 5px 0; color: #666;">Transaction completed on ${today}</p>
+            </div>
+
+            <div class="info-box">
+              <h3 style="color: #2e7d32; margin: 0 0 15px 0;">📋 Transaction Summary</h3>
+              <p style="margin: 5px 0;"><strong>Product:</strong> ${productName}</p>
+              <p style="margin: 5px 0;"><strong>Buyer:</strong> ${buyerName}</p>
+              <p style="margin: 5px 0;"><strong>Balance Amount:</strong> <span style="color: #2e7d32; font-weight: bold;">${formatCurrency(balanceAmount)}</span></p>
+              <p style="margin: 5px 0;"><strong>Transaction ID:</strong> <code style="background: #e3f2fd; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${transactionId}</code></p>
+              <p style="margin: 5px 0;"><strong>Status:</strong> <span style="color: #43a047; font-weight: bold;">✅ Completed</span></p>
+            </div>
+
+            <p><strong>What happens next:</strong></p>
+            <ul style="line-height: 1.8;">
+              <li>The payment will be processed within 2-3 business days</li>
+              <li>You will receive the funds in your registered bank account</li>
+              <li>You can view the transaction details in your dashboard</li>
+              <li>Thank you for using Farmers Direct!</li>
+            </ul>
+
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login" class="button">
+                📊 View Dashboard
+              </a>
+            </div>
+
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #1976d2;">
+              <p style="margin: 0; font-size: 14px;">
+                <strong>💡 Tip:</strong> Keep providing quality products to build your reputation on Farmers Direct and attract more buyers!
+              </p>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+            <p style="margin-top: 10px;">This is an automated message. Please do not reply to this email.</p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Payment Released!
+      
+      Dear ${farmerName},
+      
+      Congratulations! The buyer has confirmed receipt of the goods, and the balance payment has been released.
+      
+      PAYMENT RELEASED: ${formatCurrency(balanceAmount)}
+      
+      TRANSACTION SUMMARY:
+      Product: ${productName}
+      Buyer: ${buyerName}
+      Balance Amount: ${formatCurrency(balanceAmount)}
+      Transaction ID: ${transactionId}
+      Status: ✅ Completed
+      Date: ${today}
+      
+      What happens next:
+      1. The payment will be processed within 2-3 business days
+      2. You will receive the funds in your registered bank account
+      3. You can view the transaction details in your dashboard
+      4. Thank you for using Farmers Direct!
+      
+      Dashboard: ${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login
+      
+      TIP: Keep providing quality products to build your reputation on Farmers Direct and attract more buyers!
+      
+      © 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('Payment released notification email sent successfully to farmer');
+    return { success: true };
+  } catch (error) {
+    console.error('Error sending payment released notification email:', error);
+    throw error;
+  }
+};
+
+/**
+ * Send email notification when balance payment is approved by admin/owner
+ */
+export const sendBalancePaymentApprovedEmail = async (
+  farmerEmail: string,
+  buyerName: string,
+  farmerName: string,
+  productName: string,
+  balanceAmount: number,
+  transactionId: string
+) => {
+  const transporter = createTransporter();
+  const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const mailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: farmerEmail,
+    subject: `✅ Balance Payment Approved - Ready for Delivery - Farmers Direct`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%); padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .header h1 { color: white; margin: 0; font-size: 28px; }
+            .content { background: white; padding: 30px; border: 1px solid #e0e0e0; }
+            .success-box { background: #e8f5e9; padding: 25px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #43a047; text-align: center; }
+            .info-box { background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .action-box { background: #fff3e0; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ff9800; }
+            .button { display: inline-block; background: #43a047; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0; }
+            .footer { background: #f5f5f5; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>✅ Balance Payment Approved!</h1>
+          </div>
+          <div class="content">
+            <p>Dear <strong>${farmerName}</strong>,</p>
+            
+            <p>Great news! The balance payment for your transaction with <strong>${buyerName}</strong> has been verified and approved by our admin team.</p>
+            
+            <div class="success-box">
+              <div style="font-size: 48px; margin-bottom: 10px;">✅</div>
+              <h2 style="color: #2e7d32; margin: 0 0 10px 0;">Payment Approved</h2>
+              <p style="font-size: 28px; font-weight: bold; color: #2e7d32; margin: 10px 0;">${formatCurrency(balanceAmount)}</p>
+              <p style="margin: 5px 0; color: #666;">Verified on ${today}</p>
+            </div>
+
+            <div class="info-box">
+              <h3 style="color: #2e7d32; margin: 0 0 15px 0;">📋 Transaction Details</h3>
+              <p style="margin: 5px 0;"><strong>Product:</strong> ${productName}</p>
+              <p style="margin: 5px 0;"><strong>Buyer:</strong> ${buyerName}</p>
+              <p style="margin: 5px 0;"><strong>Balance Amount:</strong> <span style="color: #2e7d32; font-weight: bold;">${formatCurrency(balanceAmount)}</span></p>
+              <p style="margin: 5px 0;"><strong>Transaction ID:</strong> <code style="background: #e3f2fd; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${transactionId}</code></p>
+              <p style="margin: 5px 0;"><strong>Status:</strong> <span style="color: #ff9800; font-weight: bold;">⏳ Awaiting Delivery</span></p>
+            </div>
+
+            <div class="action-box">
+              <h3 style="color: #f57c00; margin: 0 0 15px 0;">⚡ Next Steps - Action Required</h3>
+              <p style="margin: 0 0 15px 0;"><strong>You need to mark the goods as delivered once you ship/deliver the product to the buyer.</strong></p>
+              
+              <ol style="line-height: 1.8; margin: 0; padding-left: 20px;">
+                <li>Prepare and deliver the goods to the buyer</li>
+                <li>Go to your dashboard and click on <strong>"🚚 Notify as Product Delivered"</strong> button</li>
+                <li>The buyer will be notified to confirm receipt</li>
+                <li>Once buyer confirms, your payment will be released automatically</li>
+              </ol>
+            </div>
+
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login" class="button">
+                🚚 Go to Dashboard & Mark Delivered
+              </a>
+            </div>
+
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #1976d2;">
+              <p style="margin: 0; font-size: 14px;">
+                <strong>💡 Important:</strong> Remember to mark the goods as delivered only after you've actually shipped/delivered them to the buyer. Once you notify delivery, the buyer will confirm receipt, and your payment will be released.
+              </p>
+            </div>
+
+            <p style="margin-top: 20px;"><strong>Payment Release Process:</strong></p>
+            <ul style="line-height: 1.8;">
+              <li>✅ Balance payment verified (Current step)</li>
+              <li>⏩ You mark goods as delivered (Next step)</li>
+              <li>⏩ Buyer confirms receipt</li>
+              <li>⏩ Payment released to you automatically</li>
+            </ul>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+            <p style="margin-top: 10px;">This is an automated message. Please do not reply to this email.</p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Balance Payment Approved!
+      
+      Dear ${farmerName},
+      
+      Great news! The balance payment for your transaction with ${buyerName} has been verified and approved by our admin team.
+      
+      PAYMENT APPROVED: ${formatCurrency(balanceAmount)}
+      
+      TRANSACTION DETAILS:
+      Product: ${productName}
+      Buyer: ${buyerName}
+      Balance Amount: ${formatCurrency(balanceAmount)}
+      Transaction ID: ${transactionId}
+      Status: ⏳ Awaiting Delivery
+      Verified on: ${today}
+      
+      NEXT STEPS - ACTION REQUIRED:
+      You need to mark the goods as delivered once you ship/deliver the product to the buyer.
+      
+      1. Prepare and deliver the goods to the buyer
+      2. Go to your dashboard and click on "🚚 Notify as Product Delivered" button
+      3. The buyer will be notified to confirm receipt
+      4. Once buyer confirms, your payment will be released automatically
+      
+      Dashboard: ${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login
+      
+      PAYMENT RELEASE PROCESS:
+      ✅ Balance payment verified (Current step)
+      ⏩ You mark goods as delivered (Next step)
+      ⏩ Buyer confirms receipt
+      ⏩ Payment released to you automatically
+      
+      IMPORTANT: Remember to mark the goods as delivered only after you've actually shipped/delivered them to the buyer.
+      
+      © 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('Balance payment approved notification email sent successfully to farmer');
+    return { success: true };
+  } catch (error) {
+    console.error('Error sending balance payment approved notification email:', error);
     throw error;
   }
 };

@@ -1,7 +1,7 @@
 import clientPromise from '@/app/db/mongodb';
 import { NextRequest, NextResponse } from 'next/server';
 import { decryptEmail } from '@/app/lib/encryption';
-import { sendInteractionAcceptanceEmail } from '@/app/lib/emailService';
+import { sendInteractionAcceptanceEmail, sendDeliveryNotificationEmail, sendBalancePaymentApprovedEmail } from '@/app/lib/emailService';
 
 // Helper to safely decrypt email
 const safeDecryptEmail = (email: string): string => {
@@ -161,13 +161,26 @@ export async function GET(req: NextRequest) {
     
     // If adminView is true, fetch all interactions with pending payments
     if (adminView === 'true' && paymentStatus === 'pending') {
+      // Query for interactions with either pending advance payment OR pending balance payment
+      // Note: For advance payments, status must be 'payment'
+      // For balance payments, status can be 'awaiting-delivery' or other statuses
       const interactions = await db.collection('interactions')
         .find({ 
-          'payment.verificationStatus': 'pending',
-          status: 'payment'
+          $or: [
+            { 
+              'payment.verificationStatus': 'pending',
+              status: 'payment'
+            },
+            { 'paymentBalance.verificationStatus': 'pending' }
+          ]
         })
-        .sort({ 'payment.submittedAt': -1 })
+        .sort({ 
+          'payment.submittedAt': -1,
+          'paymentBalance.submittedAt': -1
+        })
         .toArray();
+      
+      console.log('📋 Admin View: Found', interactions.length, 'interactions with pending payments');
       
       // Fetch buyer and farmer details for each interaction
       const enrichedInteractions = await Promise.all(
@@ -178,6 +191,11 @@ export async function GET(req: NextRequest) {
           const farmerDetails = await db.collection('farmers').findOne({ 
             farmerId: interaction.farmerid 
           });
+          
+          // Determine payment type for logging
+          const hasAdvancePending = interaction.payment?.verificationStatus === 'pending';
+          const hasBalancePending = interaction.paymentBalance?.verificationStatus === 'pending';
+          console.log(`  📌 Interaction ${interaction._id}: Advance=${hasAdvancePending}, Balance=${hasBalancePending}`);
           
           return {
             ...interaction,
@@ -268,8 +286,23 @@ export async function PUT(req: NextRequest) {
       paymentScreenshot,
       approvePayment,
       rejectPayment,
-      rejectionReason
+      rejectionReason,
+      notifyDeliveryReady,
+      submitBalancePayment,
+      balancePaymentScreenshot,
+      approveBalancePayment,
+      rejectBalancePayment,
+      markGoodsDelivered,
+      confirmDeliveryAndRelease
     } = await req.json();
+    
+    console.log('PUT /api/interactions received:', {
+      interactionId,
+      submitBalancePayment,
+      balancePaymentScreenshot,
+      approveBalancePayment,
+      rejectBalancePayment
+    });
     
     if (!interactionId) {
       return NextResponse.json({
@@ -279,7 +312,7 @@ export async function PUT(req: NextRequest) {
     }
     
     const updateData: any = {
-      updatedAt: new Date()
+      updatedAt: new Date().toISOString()
     };
     
     if (status !== undefined) {
@@ -528,12 +561,391 @@ export async function PUT(req: NextRequest) {
       // TODO: Send rejection email to both buyer and farmer
       console.log('Payment rejected for interaction:', interactionId, 'Reason:', rejectionReason);
     }
+
+    // Handle balance payment approval (admin only)
+    if (approveBalancePayment) {
+      const { ObjectId: ApproveBalanceObjId } = require('mongodb');
+      const interaction = await db.collection('interactions').findOne({
+        _id: new ApproveBalanceObjId(interactionId)
+      });
+
+      if (!interaction || !interaction.paymentBalance) {
+        return NextResponse.json({
+          success: false,
+          message: 'Balance payment not found'
+        }, { status: 404 });
+      }
+
+      updateData.paymentBalance = {
+        ...interaction.paymentBalance,
+        verificationStatus: 'verified',
+        verifiedAt: new Date().toISOString()
+      };
+
+      // Keep status as awaiting-delivery (farmer will mark as delivered next)
+      // Status will change to 'confirming-delivery' when farmer marks goods delivered
+      // and finally to 'completed' when buyer confirms delivery and releases payment
+
+      // Send email notification to farmer about balance payment approval
+      try {
+        const farmerEmail = safeDecryptEmail(interaction.farmer?.email || '');
+        const buyerName = interaction.buyer?.fullName || 'Buyer';
+        const farmerName = interaction.farmer?.contactPerson || 'Farmer';
+        const productName = interaction.product?.productName || 'Product';
+        const balanceAmount = interaction.paymentBalance?.balanceAmount || 0;
+        const transactionId = interaction.paymentBalance?.transactionId || 'N/A';
+
+        await sendBalancePaymentApprovedEmail(
+          farmerEmail,
+          buyerName,
+          farmerName,
+          productName,
+          balanceAmount,
+          transactionId
+        );
+        console.log('✅ Balance payment approval notification email sent to farmer');
+        console.log(`   - Farmer: ${farmerEmail}`);
+        console.log(`   - Balance Amount: ₹${balanceAmount}`);
+        console.log(`   - Transaction ID: ${transactionId}`);
+      } catch (emailError) {
+        // Log but don't fail the payment approval
+        console.error('⚠️ Failed to send balance payment approval email:', emailError);
+        console.error('   Payment approval will still proceed, but email was not sent');
+      }
+
+      console.log('Balance payment approved for interaction:', interactionId, '- Awaiting delivery notification from farmer');
+    }
+
+    // Handle balance payment rejection (admin only)
+    if (rejectBalancePayment && rejectionReason) {
+      const { ObjectId: RejectBalanceObjId } = require('mongodb');
+      const interaction = await db.collection('interactions').findOne({
+        _id: new RejectBalanceObjId(interactionId)
+      });
+
+      if (!interaction || !interaction.paymentBalance) {
+        return NextResponse.json({
+          success: false,
+          message: 'Balance payment not found'
+        }, { status: 404 });
+      }
+
+      updateData.paymentBalance = {
+        ...interaction.paymentBalance,
+        verificationStatus: 'rejected',
+        rejectedAt: new Date().toISOString(),
+        rejectionReason: rejectionReason,
+        screenshotUrl: null // Clear screenshot to allow retry
+      };
+
+      // TODO: Send rejection email to both buyer and farmer
+      console.log('Balance payment rejected for interaction:', interactionId, 'Reason:', rejectionReason);
+    }
+
+    // Handle delivery notification (farmer notifies buyer that product is ready)
+    if (notifyDeliveryReady) {
+      const { ObjectId: DeliveryObjId } = require('mongodb');
+      const interaction = await db.collection('interactions').findOne({
+        _id: new DeliveryObjId(interactionId)
+      });
+
+      if (!interaction) {
+        return NextResponse.json({
+          success: false,
+          message: 'Interaction not found'
+        }, { status: 404 });
+      }
+
+      // Verify that payment has been verified
+      if (interaction.payment?.verificationStatus !== 'verified') {
+        return NextResponse.json({
+          success: false,
+          message: 'Payment must be verified before notifying delivery'
+        }, { status: 400 });
+      }
+
+      updateData.deliveryNotified = true;
+      updateData.deliveryNotifiedAt = new Date().toISOString();
+
+      // Send email notification to buyer about delivery readiness
+      try {
+        const totalAmount = interaction.payment?.totalAmount || 0;
+        const advanceAmount = interaction.payment?.advanceAmount || 0;
+        const balanceAmount = totalAmount - advanceAmount;
+        const transactionReference = `TXN${interactionId.substring(interactionId.length - 12).toUpperCase()}`;
+
+        await sendDeliveryNotificationEmail(
+          interaction.buyer?.email || '',
+          interaction.farmer?.contactPerson || 'Farmer',
+          interaction.buyer?.fullName || 'Buyer',
+          interaction.product?.productName || 'Product',
+          balanceAmount,
+          transactionReference
+        );
+        console.log('✅ Delivery notification email sent to buyer:', interaction.buyer?.email);
+      } catch (emailError) {
+        console.error('⚠️ Failed to send delivery notification email:', emailError);
+        // Don't fail the notification, just log the error
+      }
+
+      console.log('Delivery notification sent for interaction:', interactionId);
+      console.log('Buyer will now be prompted to complete 90% balance payment');
+    }
+
+    // Handle balance payment submission (buyer uploads 90% payment screenshot) - DIRECT DB APPROACH
+    if (submitBalancePayment && balancePaymentScreenshot) {
+      try {
+        console.log('');
+        console.log('==================== BALANCE PAYMENT SUBMISSION ====================');
+        console.log('🔄 Starting balance payment submission');
+        console.log('📋 Interaction ID:', interactionId);
+        console.log('📋 Interaction ID type:', typeof interactionId);
+        console.log('📋 Interaction ID length:', interactionId?.length);
+        console.log('📸 Screenshot URL:', balancePaymentScreenshot);
+        
+        const { ObjectId: BalanceObjId } = require('mongodb');
+        
+        // Validate interaction ID format
+        if (!interactionId || interactionId.length !== 24) {
+          console.error('❌ Invalid interaction ID format:', interactionId);
+          return NextResponse.json({
+            success: false,
+            message: 'Invalid interaction ID format'
+          }, { status: 400 });
+        }
+        
+        console.log('🔍 Searching for interaction in database...');
+        const interaction = await db.collection('interactions').findOne({
+          _id: new BalanceObjId(interactionId)
+        });
+
+        if (!interaction) {
+          console.error('❌ Interaction not found in database');
+          console.error('   Interaction ID searched:', interactionId);
+          return NextResponse.json({
+            success: false,
+            message: 'Interaction not found'
+          }, { status: 404 });
+        }
+
+        console.log('✅ Interaction found!');
+        console.log('   _id:', interaction._id);
+        console.log('   status:', interaction.status);
+        console.log('   deliveryNotified:', interaction.deliveryNotified);
+
+        // Verify that delivery has been notified
+        if (!interaction.deliveryNotified) {
+          console.error('❌ Delivery not notified yet - cannot submit balance payment');
+          return NextResponse.json({
+            success: false,
+            message: 'Delivery must be notified before submitting balance payment'
+          }, { status: 400 });
+        }
+
+        console.log('✅ Delivery notification verified');
+
+        // Calculate balance amount (90% of total)
+        const totalAmount = interaction.payment?.totalAmount || 0;
+        const advanceAmount = interaction.payment?.advanceAmount || 0;
+        const balanceAmount = totalAmount - advanceAmount;
+
+        console.log('💰 Payment Calculation:');
+        console.log('   Total Amount:', totalAmount);
+        console.log('   Advance Paid (10%):', advanceAmount);
+        console.log('   Balance Due (90%):', balanceAmount);
+
+        // Create the balance payment object
+        const balancePaymentData = {
+          transactionId: `BAL${interactionId.substring(interactionId.length - 12).toUpperCase()}`,
+          totalAmount: totalAmount,
+          balanceAmount: balanceAmount,
+          screenshotUrl: balancePaymentScreenshot,
+          submittedAt: new Date().toISOString(),
+          verificationStatus: 'pending'
+        };
+
+        console.log('📝 Balance Payment Data to Save:');
+        console.log(JSON.stringify(balancePaymentData, null, 2));
+
+        // DIRECT DATABASE UPDATE
+        console.log('💾 Executing database update...');
+        const updateResult = await db.collection('interactions').updateOne(
+          { _id: new BalanceObjId(interactionId) },
+          { 
+            $set: { 
+              paymentBalance: balancePaymentData,
+              updatedAt: new Date().toISOString()
+            } 
+          }
+        );
+
+        console.log('💾 Database Update Result:');
+        console.log('   Matched Count:', updateResult.matchedCount);
+        console.log('   Modified Count:', updateResult.modifiedCount);
+        console.log('   Acknowledged:', updateResult.acknowledged);
+
+        if (updateResult.matchedCount === 0) {
+          console.error('❌ No interaction matched the query!');
+          return NextResponse.json({
+            success: false,
+            message: 'Interaction not found for update'
+          }, { status: 404 });
+        }
+
+        if (updateResult.modifiedCount === 0) {
+          console.warn('⚠️  Document matched but not modified (data might be identical)');
+        }
+
+        // Verify the update by fetching the document again
+        console.log('🔍 Verifying update by re-fetching document...');
+        const verifyDoc = await db.collection('interactions').findOne({
+          _id: new BalanceObjId(interactionId)
+        });
+        
+        if (verifyDoc?.paymentBalance) {
+          console.log('✅✅✅ SUCCESS! Balance payment saved to database!');
+          console.log('   Transaction ID:', verifyDoc.paymentBalance.transactionId);
+          console.log('   Balance Amount:', verifyDoc.paymentBalance.balanceAmount);
+          console.log('   Verification Status:', verifyDoc.paymentBalance.verificationStatus);
+        } else {
+          console.error('❌❌❌ FAILED! paymentBalance field not found in document after update!');
+          console.log('Document after update:', JSON.stringify(verifyDoc, null, 2));
+        }
+
+        console.log('==================================================================');
+        console.log('');
+
+        return NextResponse.json({
+          success: true,
+          message: 'Payment submitted for Admin verification',
+          data: {
+            transactionId: balancePaymentData.transactionId,
+            balanceAmount: balancePaymentData.balanceAmount
+          }
+        });
+        
+      } catch (error) {
+        console.error('❌❌❌ ERROR in balance payment submission:', error);
+        console.error('Error details:', error instanceof Error ? error.message : error);
+        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+        return NextResponse.json({
+          success: false,
+          message: 'Error saving balance payment: ' + (error instanceof Error ? error.message : 'Unknown error')
+        }, { status: 500 });
+      }
+    }
+
+    // Handle farmer marking goods as delivered (after balance payment is verified)
+    if (markGoodsDelivered) {
+      const { ObjectId: DeliveredObjId } = require('mongodb');
+      const interaction = await db.collection('interactions').findOne({
+        _id: new DeliveredObjId(interactionId)
+      });
+
+      if (!interaction) {
+        return NextResponse.json({
+          success: false,
+          message: 'Interaction not found'
+        }, { status: 404 });
+      }
+
+      // Verify that balance payment has been verified
+      if (interaction.paymentBalance?.verificationStatus !== 'verified') {
+        return NextResponse.json({
+          success: false,
+          message: 'Balance payment must be verified before marking goods as delivered'
+        }, { status: 400 });
+      }
+
+      updateData.goodsDelivered = true;
+      updateData.goodsDeliveredAt = new Date().toISOString();
+      updateData.status = 'confirming-delivery';
+
+      // Send email notification to buyer about goods delivery
+      try {
+        const { sendGoodsDeliveredEmail } = await import('@/app/lib/emailService');
+        
+        await sendGoodsDeliveredEmail(
+          interaction.buyer?.email || '',
+          interaction.farmer?.contactPerson || 'Farmer',
+          interaction.buyer?.fullName || 'Buyer',
+          interaction.product?.productName || 'Product',
+          interaction.paymentBalance?.balanceAmount || 0,
+          interaction.paymentBalance?.transactionId || 'N/A'
+        );
+        console.log('✅ Goods delivered notification email sent to buyer:', interaction.buyer?.email);
+      } catch (emailError) {
+        console.error('⚠️ Failed to send goods delivered notification email:', emailError);
+        // Don't fail the operation, just log the error
+      }
+
+      console.log('Goods marked as delivered for interaction:', interactionId);
+      console.log('Buyer will now be prompted to confirm receipt and release payment');
+    }
+
+    // Handle buyer confirming delivery and releasing payment
+    if (confirmDeliveryAndRelease) {
+      const { ObjectId: ConfirmObjId } = require('mongodb');
+      const interaction = await db.collection('interactions').findOne({
+        _id: new ConfirmObjId(interactionId)
+      });
+
+      if (!interaction) {
+        return NextResponse.json({
+          success: false,
+          message: 'Interaction not found'
+        }, { status: 404 });
+      }
+
+      // Verify that goods were marked as delivered by farmer
+      if (!interaction.goodsDelivered) {
+        return NextResponse.json({
+          success: false,
+          message: 'Goods must be marked as delivered by farmer first'
+        }, { status: 400 });
+      }
+
+      updateData.deliveryConfirmed = true;
+      updateData.deliveryConfirmedAt = new Date().toISOString();
+      updateData.paymentReleased = true;
+      updateData.paymentReleasedAt = new Date().toISOString();
+      updateData.status = 'completed';
+
+      // Send email notification to farmer about payment release
+      try {
+        const { sendPaymentReleasedEmail } = await import('@/app/lib/emailService');
+        
+        await sendPaymentReleasedEmail(
+          interaction.farmer?.email || '',
+          interaction.buyer?.fullName || 'Buyer',
+          interaction.farmer?.contactPerson || 'Farmer',
+          interaction.product?.productName || 'Product',
+          interaction.paymentBalance?.balanceAmount || 0,
+          interaction.paymentBalance?.transactionId || 'N/A'
+        );
+        console.log('✅ Payment released notification email sent to farmer:', interaction.farmer?.email);
+      } catch (emailError) {
+        console.error('⚠️ Failed to send payment released notification email:', emailError);
+        // Don't fail the operation, just log the error
+      }
+
+      console.log('Delivery confirmed and payment released for interaction:', interactionId);
+      console.log('Interaction status updated to completed');
+    }
     
     const { ObjectId } = require('mongodb');
+    console.log('About to update database with updateData:', JSON.stringify(updateData, null, 2));
+    
     const result = await db.collection('interactions').updateOne(
       { _id: new ObjectId(interactionId) },
       { $set: updateData }
     );
+    
+    console.log('Database update result:', { 
+      matchedCount: result.matchedCount, 
+      modifiedCount: result.modifiedCount,
+      acknowledged: result.acknowledged
+    });
     
     if (result.modifiedCount > 0) {
       return NextResponse.json({

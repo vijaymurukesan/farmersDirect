@@ -136,7 +136,7 @@ export default function Header() {
                   e.currentTarget.style.color = '#388e3c';
                 }}
               >
-                📊 My Account
+                My Account
               </a>
               {(!emailVerified || !userVerified) && (
                 <span>

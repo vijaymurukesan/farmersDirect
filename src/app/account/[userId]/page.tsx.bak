@@ -74,7 +74,7 @@ interface Interaction {
   paymentBalance?: {
     transactionId: string;
     totalAmount: number;
-    balanceAmount: number;
+    advanceAmount: number;
     screenshotUrl?: string | null;
     submittedAt?: string;
     verificationStatus?: 'pending' | 'verified' | 'rejected';
@@ -82,14 +82,11 @@ interface Interaction {
     rejectedAt?: string;
     rejectionReason?: string;
   };
+    rejectedAt?: string;
+    rejectionReason?: string;
+  };
   deliveryNotified?: boolean;
   deliveryNotifiedAt?: string;
-  goodsDelivered?: boolean;
-  goodsDeliveredAt?: string;
-  deliveryConfirmed?: boolean;
-  deliveryConfirmedAt?: string;
-  paymentReleased?: boolean;
-  paymentReleasedAt?: string;
   createdAt: string;
   updatedAt: string;
   respondedAt?: string;
@@ -105,7 +102,7 @@ export default function AccountPage() {
   const [isOwner, setIsOwner] = useState(false);
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('interest');
+  const [activeTab, setActiveTab] = useState('all');
   const [interestSubTab, setInterestSubTab] = useState('all');
 
   // Reply state
@@ -184,18 +181,6 @@ export default function AccountPage() {
   const [balancePaymentUploading, setBalancePaymentUploading] = useState<{
     [key: string]: boolean;
   }>({});
-
-  // Delivery confirmation modal state
-  const [deliveryConfirmModal, setDeliveryConfirmModal] = useState<{
-    isOpen: boolean;
-    interactionId: string;
-  }>({ isOpen: false, interactionId: '' });
-
-  // Buyer delivery confirmation modal state
-  const [buyerDeliveryConfirmModal, setBuyerDeliveryConfirmModal] = useState<{
-    isOpen: boolean;
-    interactionId: string;
-  }>({ isOpen: false, interactionId: '' });
 
   const paymentRejectionReasons = [
     'Payment screenshot is not clear or readable',
@@ -1036,18 +1021,13 @@ Note: This is a legally binding electronic document. By signing this agreement, 
       return;
     }
 
-    // Check if this is a balance payment rejection by checking interactions
-    const interaction = interactions.find((i) => i._id === interactionId);
-    const isBalancePayment =
-      interaction?.paymentBalance?.verificationStatus === 'pending';
-
     try {
       const response = await fetch('/api/interactions', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           interactionId,
-          [isBalancePayment ? 'rejectBalancePayment' : 'rejectPayment']: true,
+          rejectPayment: true,
           rejectionReason: finalReason,
         }),
       });
@@ -1058,9 +1038,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
         setPaymentRejectionModal({ isOpen: false, interactionId: '' });
         setSnackbar({
           isOpen: true,
-          message: `✅ ${
-            isBalancePayment ? 'Balance' : ''
-          } Payment rejected. Buyer has been notified.`,
+          message: '✅ Payment rejected. Buyer has been notified.',
           type: 'success',
         });
         setTimeout(() => {
@@ -1078,76 +1056,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
         type: 'error',
       });
     }
-  };
-
-  // Handle approve balance payment (admin only)
-  const handleApproveBalancePayment = async (interactionId: string) => {
-    if (
-      !userData ||
-      (userData.userType !== 'admin' && userData.userType !== 'owner')
-    ) {
-      setSnackbar({
-        isOpen: true,
-        message: 'Unauthorized: Admin access required',
-        type: 'error',
-      });
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/interactions', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          interactionId,
-          approveBalancePayment: true,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        setSnackbar({
-          isOpen: true,
-          message: '✅ Balance payment approved successfully!',
-          type: 'success',
-        });
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      } else {
-        throw new Error(result.message || 'Failed to approve balance payment');
-      }
-    } catch (error) {
-      console.error('Error approving balance payment:', error);
-      setSnackbar({
-        isOpen: true,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Error approving balance payment',
-        type: 'error',
-      });
-    }
-  };
-
-  // Handle reject balance payment (admin only)
-  const handleRejectBalancePayment = (interactionId: string) => {
-    if (
-      !userData ||
-      (userData.userType !== 'admin' && userData.userType !== 'owner')
-    ) {
-      setSnackbar({
-        isOpen: true,
-        message: 'Unauthorized: Admin access required',
-        type: 'error',
-      });
-      return;
-    }
-
-    setPaymentRejectionModal({ isOpen: true, interactionId });
-    setPaymentRejectionReason('');
-    setPaymentCustomReason('');
   };
 
   // Handle download contract PDF
@@ -1362,40 +1270,24 @@ Note: This is a legally binding electronic document. By signing this agreement, 
         );
       }
 
-      // Get the screenshot URL from the correct path in response
-      const screenshotUrl = uploadResult.data?.url || uploadResult.url;
-
-      console.log('📸 Screenshot upload result:', uploadResult);
-      console.log('📸 Screenshot URL extracted:', screenshotUrl);
-
-      if (!screenshotUrl) {
-        throw new Error('Screenshot URL not received from upload');
-      }
-
       // Submit balance payment with screenshot URL
-      console.log(
-        '💰 Submitting balance payment for interaction:',
-        interactionId
-      );
-      console.log('💰 Screenshot URL being sent:', screenshotUrl);
       const response = await fetch('/api/interactions', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           interactionId,
           submitBalancePayment: true,
-          balancePaymentScreenshot: screenshotUrl,
+          balancePaymentScreenshot: uploadResult.url,
         }),
       });
 
       const result = await response.json();
-      console.log('📬 API Response:', result);
 
       if (response.ok && result.success) {
-        console.log('✅ Balance payment submitted successfully');
         setSnackbar({
           isOpen: true,
-          message: result.message || 'Payment submitted for Admin verification',
+          message:
+            '✅ Balance payment submitted! Awaiting admin verification.',
           type: 'success',
         });
         setTimeout(() => {
@@ -1418,101 +1310,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
       setBalancePaymentUploading({
         ...balancePaymentUploading,
         [interactionId]: false,
-      });
-    }
-  };
-
-  // Handle farmer marking goods as delivered
-  const handleMarkGoodsDelivered = async (interactionId: string) => {
-    setDeliveryConfirmModal({ isOpen: true, interactionId });
-  };
-
-  const confirmMarkGoodsDelivered = async () => {
-    const interactionId = deliveryConfirmModal.interactionId;
-    setDeliveryConfirmModal({ isOpen: false, interactionId: '' });
-
-    try {
-      const response = await fetch('/api/interactions', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          interactionId,
-          markGoodsDelivered: true,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        setSnackbar({
-          isOpen: true,
-          message:
-            'Goods marked as delivered! Buyer has been notified to confirm receipt and release payment.',
-          type: 'success',
-        });
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      } else {
-        throw new Error(result.message || 'Failed to mark goods as delivered');
-      }
-    } catch (error) {
-      console.error('Error marking goods as delivered:', error);
-      setSnackbar({
-        isOpen: true,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Error marking goods as delivered',
-        type: 'error',
-      });
-    }
-  };
-
-  // Handle buyer confirming delivery and releasing payment
-  const handleConfirmDeliveryAndRelease = async (interactionId: string) => {
-    setBuyerDeliveryConfirmModal({ isOpen: true, interactionId });
-  };
-
-  // Confirm buyer delivery after modal approval
-  const confirmBuyerDelivery = async () => {
-    const interactionId = buyerDeliveryConfirmModal.interactionId;
-    setBuyerDeliveryConfirmModal({ isOpen: false, interactionId: '' });
-
-    try {
-      const response = await fetch('/api/interactions', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          interactionId,
-          confirmDeliveryAndRelease: true,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        setSnackbar({
-          isOpen: true,
-          message:
-            'Delivery confirmed! Payment has been released to the farmer. Transaction completed successfully!',
-          type: 'success',
-        });
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      } else {
-        throw new Error(
-          result.message || 'Failed to confirm delivery and release payment'
-        );
-      }
-    } catch (error) {
-      console.error('Error confirming delivery:', error);
-      setSnackbar({
-        isOpen: true,
-        message:
-          error instanceof Error ? error.message : 'Error confirming delivery',
-        type: 'error',
       });
     }
   };
@@ -1541,11 +1338,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
         bg: '#e0f2f1',
         color: '#00695c',
         text: '🚚 Awaiting Delivery',
-      },
-      'confirming-delivery': {
-        bg: '#fff9c4',
-        color: '#f57f17',
-        text: '📦 Confirming Delivery',
       },
       completed: { bg: '#e3f2fd', color: '#1565c0', text: '✔️ Completed' },
     };
@@ -1784,7 +1576,10 @@ Note: This is a legally binding electronic document. By signing this agreement, 
               }}
             >
               {[
+                { id: 'all', label: 'All', icon: '📋' },
+                { id: 'shortlist', label: 'Shortlisted', icon: '⭐' },
                 { id: 'interest', label: 'Expressed Interest', icon: '💼' },
+                { id: 'sample', label: 'Sample Requests', icon: '📦' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -2817,10 +2612,9 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                           </div>
                         )}
 
-                      {/* Enter Contract Button - Show when both accepted and contract not yet generated */}
+                      {/* Enter Contract Button - Show when both accepted */}
                       {interaction.farmerAccepted &&
                         interaction.buyerAccepted &&
-                        !interaction.contract &&
                         interaction.status !== 'completed' &&
                         interaction.status !== 'contract' &&
                         interaction.status !== 'payment' &&
@@ -3215,12 +3009,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                           <span style={{ color: '#666' }}>
                                             Bank Name:
                                           </span>
-                                          <span
-                                            style={{
-                                              fontWeight: 'bold',
-                                              color: '#000000',
-                                            }}
-                                          >
+                                          <span style={{ fontWeight: 'bold' }}>
                                             State Bank of India
                                           </span>
                                         </div>
@@ -3234,12 +3023,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                           <span style={{ color: '#666' }}>
                                             Account Name:
                                           </span>
-                                          <span
-                                            style={{
-                                              fontWeight: 'bold',
-                                              color: '#000000',
-                                            }}
-                                          >
+                                          <span style={{ fontWeight: 'bold' }}>
                                             Farmers Direct Pvt Ltd
                                           </span>
                                         </div>
@@ -3257,7 +3041,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                             style={{
                                               fontWeight: 'bold',
                                               fontFamily: 'monospace',
-                                              color: '#000000',
                                             }}
                                           >
                                             1234567890123456
@@ -3277,7 +3060,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                             style={{
                                               fontWeight: 'bold',
                                               fontFamily: 'monospace',
-                                              color: '#000000',
                                             }}
                                           >
                                             SBIN0001234
@@ -3410,7 +3192,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                       <div
                                         style={{
                                           fontSize: '0.75rem',
-                                          color: '#000000',
+                                          color: '#6d4c41',
                                           marginTop: '0.5rem',
                                           fontStyle: 'italic',
                                         }}
@@ -3433,7 +3215,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                         style={{
                                           fontSize: '0.9rem',
                                           fontWeight: 'bold',
-                                          color: '#000000',
+                                          color: '#01579b',
                                           marginBottom: '0.5rem',
                                           display: 'block',
                                         }}
@@ -3457,7 +3239,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                           cursor: 'pointer',
                                           fontSize: '0.85rem',
                                           background: '#f5f5f5',
-                                          color: '#000000',
                                         }}
                                       />
                                       {paymentScreenshotPreview[
@@ -3472,7 +3253,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                           <div
                                             style={{
                                               fontSize: '0.85rem',
-                                              color: '#000000',
+                                              color: '#01579b',
                                               marginBottom: '0.5rem',
                                               fontWeight: 'bold',
                                             }}
@@ -4231,9 +4012,9 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                           💰 Balance Payment Required (90%)
                                         </h4>
 
-                                        {!interaction.paymentBalance
+                                        {!interaction.balancePayment
                                           ?.screenshotUrl ||
-                                        interaction.paymentBalance
+                                        interaction.balancePayment
                                           ?.verificationStatus ===
                                           'rejected' ? (
                                           <>
@@ -4322,7 +4103,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                   <span
                                                     style={{
                                                       fontWeight: 'bold',
-                                                      color: '#000000',
                                                     }}
                                                   >
                                                     State Bank of India
@@ -4344,7 +4124,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                   <span
                                                     style={{
                                                       fontWeight: 'bold',
-                                                      color: '#000000',
                                                     }}
                                                   >
                                                     Farmers Direct Pvt Ltd
@@ -4367,7 +4146,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                     style={{
                                                       fontWeight: 'bold',
                                                       fontFamily: 'monospace',
-                                                      color: '#000000',
                                                     }}
                                                   >
                                                     1234567890123456
@@ -4390,7 +4168,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                     style={{
                                                       fontWeight: 'bold',
                                                       fontFamily: 'monospace',
-                                                      color: '#000000',
                                                     }}
                                                   >
                                                     SBIN0001234
@@ -4455,8 +4232,8 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                   fontWeight: 'bold',
                                                 }}
                                               >
-                                                📋 Transaction Reference (Use in
-                                                payment remarks):
+                                                📋 Transaction Reference (Use
+                                                in payment remarks):
                                               </div>
                                               <div
                                                 style={{
@@ -4494,7 +4271,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                 style={{
                                                   fontSize: '0.9rem',
                                                   fontWeight: 'bold',
-                                                  color: '#000000',
+                                                  color: '#e65100',
                                                   marginBottom: '0.5rem',
                                                   display: 'block',
                                                 }}
@@ -4519,7 +4296,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                   cursor: 'pointer',
                                                   fontSize: '0.85rem',
                                                   background: '#f5f5f5',
-                                                  color: '#000000',
                                                 }}
                                               />
                                               {balancePaymentPreview[
@@ -4534,7 +4310,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                   <div
                                                     style={{
                                                       fontSize: '0.85rem',
-                                                      color: '#000000',
+                                                      color: '#e65100',
                                                       marginBottom: '0.5rem',
                                                       fontWeight: 'bold',
                                                     }}
@@ -4611,7 +4387,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                                 : '💰 Submit Balance Payment (90%)'}
                                             </button>
                                           </>
-                                        ) : interaction.paymentBalance
+                                        ) : interaction.balancePayment
                                             ?.verificationStatus ===
                                           'pending' ? (
                                           <div
@@ -4620,301 +4396,56 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                               padding: '1.5rem',
                                               borderRadius: '8px',
                                               border: '2px solid #ff9800',
+                                              textAlign: 'center',
                                             }}
                                           >
                                             <div
                                               style={{
-                                                textAlign: 'center',
-                                                marginBottom: '1rem',
+                                                fontSize: '2rem',
+                                                marginBottom: '0.5rem',
                                               }}
                                             >
-                                              <div
-                                                style={{
-                                                  fontSize: '2rem',
-                                                  marginBottom: '0.5rem',
-                                                }}
-                                              >
-                                                ⏳
-                                              </div>
-                                              <div
-                                                style={{
-                                                  fontSize: '1.1rem',
-                                                  fontWeight: 'bold',
-                                                  color: '#e65100',
-                                                  marginBottom: '0.5rem',
-                                                }}
-                                              >
-                                                Balance Payment Verification
-                                                Pending
-                                              </div>
-                                              <div
-                                                style={{
-                                                  fontSize: '0.85rem',
-                                                  color: '#6d4c41',
-                                                }}
-                                              >
-                                                Your 90% balance payment
-                                                screenshot is under review by
-                                                our team.
-                                              </div>
+                                              ⏳
                                             </div>
-
-                                            {/* Transaction Details */}
                                             <div
                                               style={{
-                                                background: '#e3f2fd',
-                                                padding: '1rem',
-                                                borderRadius: '8px',
-                                                marginBottom: '1rem',
-                                                border: '1px solid #1565c0',
+                                                fontSize: '1.1rem',
+                                                fontWeight: 'bold',
+                                                color: '#e65100',
+                                                marginBottom: '0.5rem',
                                               }}
                                             >
-                                              <div
-                                                style={{
-                                                  fontWeight: 'bold',
-                                                  color: '#1565c0',
-                                                  marginBottom: '0.75rem',
-                                                }}
-                                              >
-                                                📋 Transaction Details
-                                              </div>
-                                              <div
-                                                style={{
-                                                  display: 'grid',
-                                                  gap: '0.5rem',
-                                                  fontSize: '0.9rem',
-                                                }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    display: 'grid',
-                                                    gridTemplateColumns:
-                                                      '140px 1fr',
-                                                    gap: '0.5rem',
-                                                  }}
-                                                >
-                                                  <span
-                                                    style={{ color: '#666' }}
-                                                  >
-                                                    Transaction ID:
-                                                  </span>
-                                                  <span
-                                                    style={{
-                                                      fontWeight: 'bold',
-                                                      fontFamily: 'monospace',
-                                                      color: '#1565c0',
-                                                    }}
-                                                  >
-                                                    {
-                                                      interaction.paymentBalance
-                                                        .transactionId
-                                                    }
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    display: 'grid',
-                                                    gridTemplateColumns:
-                                                      '140px 1fr',
-                                                    gap: '0.5rem',
-                                                  }}
-                                                >
-                                                  <span
-                                                    style={{ color: '#666' }}
-                                                  >
-                                                    Total Amount:
-                                                  </span>
-                                                  <span
-                                                    style={{
-                                                      fontWeight: 'bold',
-                                                      color: '#1565c0',
-                                                    }}
-                                                  >
-                                                    ₹
-                                                    {interaction.paymentBalance.totalAmount?.toFixed(
-                                                      2
-                                                    )}
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    display: 'grid',
-                                                    gridTemplateColumns:
-                                                      '140px 1fr',
-                                                    gap: '0.5rem',
-                                                  }}
-                                                >
-                                                  <span
-                                                    style={{ color: '#666' }}
-                                                  >
-                                                    Balance Amount:
-                                                  </span>
-                                                  <span
-                                                    style={{
-                                                      fontWeight: 'bold',
-                                                      color: '#d32f2f',
-                                                    }}
-                                                  >
-                                                    ₹
-                                                    {interaction.paymentBalance.advanceAmount?.toFixed(
-                                                      2
-                                                    )}{' '}
-                                                    (90%)
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    display: 'grid',
-                                                    gridTemplateColumns:
-                                                      '140px 1fr',
-                                                    gap: '0.5rem',
-                                                  }}
-                                                >
-                                                  <span
-                                                    style={{ color: '#666' }}
-                                                  >
-                                                    Submitted On:
-                                                  </span>
-                                                  <span
-                                                    style={{
-                                                      fontWeight: 'bold',
-                                                      color: '#1565c0',
-                                                    }}
-                                                  >
-                                                    {interaction.paymentBalance
-                                                      .submittedAt
-                                                      ? new Date(
-                                                          interaction.paymentBalance.submittedAt
-                                                        ).toLocaleString(
-                                                          'en-IN'
-                                                        )
-                                                      : 'N/A'}
-                                                  </span>
-                                                </div>
-                                              </div>
+                                              Balance Payment Verification
+                                              Pending
                                             </div>
-
-                                            {/* Payment Screenshot */}
-                                            {interaction.paymentBalance
+                                            <div
+                                              style={{
+                                                fontSize: '0.85rem',
+                                                color: '#6d4c41',
+                                                marginBottom: '1rem',
+                                              }}
+                                            >
+                                              Your 90% balance payment screenshot
+                                              is under review by our team.
+                                            </div>
+                                            {interaction.balancePayment
                                               ?.screenshotUrl && (
-                                              <div
-                                                style={{ marginTop: '1rem' }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    fontSize: '0.9rem',
-                                                    fontWeight: 'bold',
-                                                    color: '#e65100',
-                                                    marginBottom: '0.5rem',
-                                                  }}
-                                                >
-                                                  Payment Screenshot:
-                                                </div>
-                                                <img
-                                                  src={
-                                                    interaction.paymentBalance
-                                                      .screenshotUrl
-                                                  }
-                                                  alt='Balance Payment Screenshot'
-                                                  style={{
-                                                    maxWidth: '100%',
-                                                    maxHeight: '300px',
-                                                    borderRadius: '8px',
-                                                    border: '2px solid #ff9800',
-                                                    display: 'block',
-                                                    margin: '0 auto',
-                                                  }}
-                                                />
-                                              </div>
+                                              <img
+                                                src={
+                                                  interaction.balancePayment
+                                                    .screenshotUrl
+                                                }
+                                                alt='Balance Payment Screenshot'
+                                                style={{
+                                                  maxWidth: '100%',
+                                                  maxHeight: '300px',
+                                                  borderRadius: '8px',
+                                                  border: '2px solid #ff9800',
+                                                }}
+                                              />
                                             )}
-
-                                            {/* Admin Approve/Reject Buttons */}
-                                            {userData &&
-                                              (userData.userType === 'admin' ||
-                                                userData.userType ===
-                                                  'owner') && (
-                                                <div
-                                                  style={{
-                                                    marginTop: '1rem',
-                                                    display: 'flex',
-                                                    gap: '1rem',
-                                                    justifyContent: 'center',
-                                                  }}
-                                                >
-                                                  <button
-                                                    onClick={() =>
-                                                      handleApproveBalancePayment(
-                                                        interaction._id
-                                                      )
-                                                    }
-                                                    style={{
-                                                      flex: 1,
-                                                      background: '#4caf50',
-                                                      color: 'white',
-                                                      border: 'none',
-                                                      borderRadius: '8px',
-                                                      padding: '1rem',
-                                                      cursor: 'pointer',
-                                                      fontSize: '1rem',
-                                                      fontWeight: 'bold',
-                                                      transition:
-                                                        'all 0.3s ease',
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                      e.currentTarget.style.background =
-                                                        '#388e3c';
-                                                      e.currentTarget.style.transform =
-                                                        'translateY(-2px)';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                      e.currentTarget.style.background =
-                                                        '#4caf50';
-                                                      e.currentTarget.style.transform =
-                                                        'translateY(0)';
-                                                    }}
-                                                  >
-                                                    ✅ Approve 90% Balance
-                                                    Payment
-                                                  </button>
-                                                  <button
-                                                    onClick={() =>
-                                                      handleRejectBalancePayment(
-                                                        interaction._id
-                                                      )
-                                                    }
-                                                    style={{
-                                                      flex: 1,
-                                                      background: '#f44336',
-                                                      color: 'white',
-                                                      border: 'none',
-                                                      borderRadius: '8px',
-                                                      padding: '1rem',
-                                                      cursor: 'pointer',
-                                                      fontSize: '1rem',
-                                                      fontWeight: 'bold',
-                                                      transition:
-                                                        'all 0.3s ease',
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                      e.currentTarget.style.background =
-                                                        '#d32f2f';
-                                                      e.currentTarget.style.transform =
-                                                        'translateY(-2px)';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                      e.currentTarget.style.background =
-                                                        '#f44336';
-                                                      e.currentTarget.style.transform =
-                                                        'translateY(0)';
-                                                    }}
-                                                  >
-                                                    ❌ Reject 90% Balance
-                                                    Payment
-                                                  </button>
-                                                </div>
-                                              )}
                                           </div>
-                                        ) : interaction.paymentBalance
+                                        ) : interaction.balancePayment
                                             ?.verificationStatus ===
                                           'verified' ? (
                                           <div
@@ -4956,227 +4487,8 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                             </div>
                                           </div>
                                         ) : null}
-
-                                        {/* Goods Received and Payment Released - Show after completion */}
-                                        {interaction.deliveryConfirmed &&
-                                          interaction.paymentReleased && (
-                                            <div
-                                              style={{
-                                                marginTop: '1.5rem',
-                                                padding: '1.5rem',
-                                                background:
-                                                  'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
-                                                border: '2px solid #43a047',
-                                                borderRadius: '8px',
-                                                textAlign: 'center',
-                                              }}
-                                            >
-                                              <div
-                                                style={{
-                                                  fontSize: '3rem',
-                                                  marginBottom: '0.5rem',
-                                                }}
-                                              >
-                                                ✅
-                                              </div>
-                                              <h4
-                                                style={{
-                                                  color: '#2e7d32',
-                                                  margin: '0 0 0.5rem 0',
-                                                  fontSize: '1.3rem',
-                                                }}
-                                              >
-                                                Goods Received and Money
-                                                Released to Farmer
-                                              </h4>
-                                              <p
-                                                style={{
-                                                  fontSize: '0.9rem',
-                                                  color: '#000000',
-                                                  margin: '0.5rem 0',
-                                                }}
-                                              >
-                                                Transaction completed
-                                                successfully! Balance payment of{' '}
-                                                <strong>
-                                                  ₹
-                                                  {interaction.paymentBalance?.balanceAmount?.toFixed(
-                                                    2
-                                                  )}
-                                                </strong>{' '}
-                                                has been released to the farmer.
-                                              </p>
-                                              {interaction.deliveryConfirmedAt && (
-                                                <p
-                                                  style={{
-                                                    fontSize: '0.85rem',
-                                                    color: '#666',
-                                                    margin: '0.75rem 0 0 0',
-                                                  }}
-                                                >
-                                                  Confirmed on:{' '}
-                                                  {new Date(
-                                                    interaction.deliveryConfirmedAt
-                                                  ).toLocaleString('en-IN', {
-                                                    day: 'numeric',
-                                                    month: 'long',
-                                                    year: 'numeric',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit',
-                                                  })}
-                                                </p>
-                                              )}
-                                            </div>
-                                          )}
                                       </div>
                                     )}
-
-                                    {/* Accept Product Received Button - Show when goods delivered (confirming-delivery status) */}
-                                    {interaction.status ===
-                                      'confirming-delivery' &&
-                                      interaction.paymentBalance
-                                        ?.verificationStatus === 'verified' &&
-                                      !interaction.deliveryConfirmed && (
-                                        <div style={{ marginTop: '1.5rem' }}>
-                                          <div
-                                            style={{
-                                              background:
-                                                'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
-                                              border: '2px solid #ff9800',
-                                              borderRadius: '12px',
-                                              padding: '1.5rem',
-                                              marginBottom: '1rem',
-                                            }}
-                                          >
-                                            <div
-                                              style={{
-                                                textAlign: 'center',
-                                                marginBottom: '1rem',
-                                              }}
-                                            >
-                                              <div
-                                                style={{
-                                                  fontSize: '3rem',
-                                                  marginBottom: '0.5rem',
-                                                }}
-                                              >
-                                                📦
-                                              </div>
-                                              <h4
-                                                style={{
-                                                  color: '#e65100',
-                                                  margin: '0 0 0.5rem 0',
-                                                  fontSize: '1.3rem',
-                                                }}
-                                              >
-                                                Product Delivered!
-                                              </h4>
-                                              <p
-                                                style={{
-                                                  fontSize: '0.95rem',
-                                                  color: '#6d4c41',
-                                                  margin: '0 0 1rem 0',
-                                                }}
-                                              >
-                                                The farmer has notified that the
-                                                goods have been delivered.
-                                                Please inspect the product and
-                                                confirm receipt.
-                                              </p>
-                                            </div>
-
-                                            <div
-                                              style={{
-                                                background: 'white',
-                                                padding: '1rem',
-                                                borderRadius: '8px',
-                                                marginBottom: '1rem',
-                                                border: '1px solid #ff9800',
-                                              }}
-                                            >
-                                              <div
-                                                style={{
-                                                  fontSize: '0.9rem',
-                                                  color: '#6d4c41',
-                                                  lineHeight: '1.6',
-                                                }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    fontWeight: 'bold',
-                                                    color: '#e65100',
-                                                    marginBottom: '0.5rem',
-                                                  }}
-                                                >
-                                                  ⚠️ Important:
-                                                </div>
-                                                • Inspect the product quality
-                                                and quantity
-                                                <br />
-                                                • Verify it matches your order
-                                                specifications
-                                                <br />• Confirming will release
-                                                the 90% balance payment to the
-                                                farmer
-                                              </div>
-                                            </div>
-
-                                            <button
-                                              onClick={() =>
-                                                handleConfirmDeliveryAndRelease(
-                                                  interaction._id
-                                                )
-                                              }
-                                              style={{
-                                                width: '100%',
-                                                background:
-                                                  'linear-gradient(135deg, #43a047 0%, #2e7d32 100%)',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '8px',
-                                                padding: '1rem',
-                                                cursor: 'pointer',
-                                                fontSize: '1.1rem',
-                                                fontWeight: 'bold',
-                                                transition: 'all 0.3s ease',
-                                                boxShadow:
-                                                  '0 4px 6px rgba(0,0,0,0.1)',
-                                              }}
-                                              onMouseEnter={(e) => {
-                                                e.currentTarget.style.transform =
-                                                  'translateY(-2px)';
-                                                e.currentTarget.style.boxShadow =
-                                                  '0 6px 12px rgba(0,0,0,0.15)';
-                                              }}
-                                              onMouseLeave={(e) => {
-                                                e.currentTarget.style.transform =
-                                                  'translateY(0)';
-                                                e.currentTarget.style.boxShadow =
-                                                  '0 4px 6px rgba(0,0,0,0.1)';
-                                              }}
-                                            >
-                                              ✅ Accept Product Received &
-                                              Release Payment
-                                            </button>
-                                            <p
-                                              style={{
-                                                fontSize: '0.8rem',
-                                                color: '#666',
-                                                textAlign: 'center',
-                                                marginTop: '0.75rem',
-                                                marginBottom: 0,
-                                              }}
-                                            >
-                                              This action will complete the
-                                              transaction and release ₹
-                                              {interaction.paymentBalance?.balanceAmount?.toFixed(
-                                                2
-                                              ) || '0.00'}{' '}
-                                              to the farmer
-                                            </p>
-                                          </div>
-                                        </div>
-                                      )}
                                   </div>
                                 ) : null}
                               </div>
@@ -5777,11 +5089,9 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                               margin: 0,
                                             }}
                                           >
-                                            Notify the buyer when your product
-                                            is ready for delivery.
+                                            Notify the buyer when your product is ready for delivery.
                                             <br />
-                                            This will activate the balance
-                                            payment (90%) section for the buyer.
+                                            This will activate the balance payment (90%) section for the buyer.
                                           </p>
                                         </div>
 
@@ -5864,8 +5174,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                             </>
                                           ) : (
                                             <>
-                                              🔔 Notify Buyer - Product Ready
-                                              for Delivery
+                                              🔔 Notify Buyer - Product Ready for Delivery
                                             </>
                                           )}
                                         </button>
@@ -5879,8 +5188,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                             fontStyle: 'italic',
                                           }}
                                         >
-                                          ⚠️ Only click when product is fully
-                                          prepared and ready for delivery
+                                          ⚠️ Only click when product is fully prepared and ready for delivery
                                         </p>
                                       </div>
                                     )}
@@ -5920,11 +5228,9 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                             margin: 0,
                                           }}
                                         >
-                                          The buyer has been notified that the
-                                          product is ready.
+                                          The buyer has been notified that the product is ready.
                                           <br />
-                                          Waiting for buyer to complete the 90%
-                                          balance payment.
+                                          Waiting for buyer to complete the 90% balance payment.
                                         </p>
                                         {interaction.deliveryNotifiedAt && (
                                           <p
@@ -5948,634 +5254,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                         )}
                                       </div>
                                     )}
-
-                                    {/* Balance Payment Status - Show for Farmer */}
-                                    {interaction.deliveryNotified &&
-                                      interaction.paymentBalance && (
-                                        <div
-                                          style={{
-                                            marginTop: '1.5rem',
-                                            padding: '1.5rem',
-                                            background:
-                                              interaction.paymentBalance
-                                                .verificationStatus ===
-                                              'verified'
-                                                ? '#e8f5e9'
-                                                : '#fff3e0',
-                                            border: `2px solid ${
-                                              interaction.paymentBalance
-                                                .verificationStatus ===
-                                              'verified'
-                                                ? '#4caf50'
-                                                : '#ff9800'
-                                            }`,
-                                            borderRadius: '12px',
-                                          }}
-                                        >
-                                          <div
-                                            style={{
-                                              textAlign: 'center',
-                                              marginBottom: '1rem',
-                                            }}
-                                          >
-                                            <div
-                                              style={{
-                                                fontSize: '2rem',
-                                                marginBottom: '0.5rem',
-                                              }}
-                                            >
-                                              {interaction.paymentBalance
-                                                .verificationStatus ===
-                                              'pending'
-                                                ? '⏳'
-                                                : '✅'}
-                                            </div>
-                                            <h4
-                                              style={{
-                                                color:
-                                                  interaction.paymentBalance
-                                                    .verificationStatus ===
-                                                  'verified'
-                                                    ? '#2e7d32'
-                                                    : '#e65100',
-                                                margin: '0 0 0.5rem 0',
-                                              }}
-                                            >
-                                              {interaction.paymentBalance
-                                                .verificationStatus ===
-                                              'pending'
-                                                ? '90% Balance Payment Pending Verification'
-                                                : 'Balance Payment Verified!'}
-                                            </h4>
-                                            <p
-                                              style={{
-                                                fontSize: '0.85rem',
-                                                color: '#6d4c41',
-                                                margin: 0,
-                                              }}
-                                            >
-                                              {interaction.paymentBalance
-                                                .verificationStatus ===
-                                              'pending'
-                                                ? 'Buyer has submitted the 90% balance payment. Under admin review.'
-                                                : 'Transaction complete! You can now proceed with delivery.'}
-                                            </p>
-                                          </div>
-
-                                          {/* Transaction Details */}
-                                          <div
-                                            style={{
-                                              background: '#e3f2fd',
-                                              padding: '1rem',
-                                              borderRadius: '8px',
-                                              marginBottom: '1rem',
-                                              border: '1px solid #1565c0',
-                                            }}
-                                          >
-                                            <div
-                                              style={{
-                                                fontWeight: 'bold',
-                                                color: '#1565c0',
-                                                marginBottom: '0.75rem',
-                                              }}
-                                            >
-                                              📋 Balance Payment Details
-                                            </div>
-                                            <div
-                                              style={{
-                                                display: 'grid',
-                                                gap: '0.5rem',
-                                                fontSize: '0.9rem',
-                                              }}
-                                            >
-                                              <div
-                                                style={{
-                                                  display: 'grid',
-                                                  gridTemplateColumns:
-                                                    '140px 1fr',
-                                                  gap: '0.5rem',
-                                                }}
-                                              >
-                                                <span style={{ color: '#666' }}>
-                                                  Transaction ID:
-                                                </span>
-                                                <span
-                                                  style={{
-                                                    fontWeight: 'bold',
-                                                    fontFamily: 'monospace',
-                                                    color: '#1565c0',
-                                                  }}
-                                                >
-                                                  {
-                                                    interaction.paymentBalance
-                                                      .transactionId
-                                                  }
-                                                </span>
-                                              </div>
-                                              <div
-                                                style={{
-                                                  display: 'grid',
-                                                  gridTemplateColumns:
-                                                    '140px 1fr',
-                                                  gap: '0.5rem',
-                                                }}
-                                              >
-                                                <span style={{ color: '#666' }}>
-                                                  Total Amount:
-                                                </span>
-                                                <span
-                                                  style={{
-                                                    fontWeight: 'bold',
-                                                    color: '#1565c0',
-                                                  }}
-                                                >
-                                                  ₹
-                                                  {interaction.paymentBalance.totalAmount?.toFixed(
-                                                    2
-                                                  )}
-                                                </span>
-                                              </div>
-                                              <div
-                                                style={{
-                                                  display: 'grid',
-                                                  gridTemplateColumns:
-                                                    '140px 1fr',
-                                                  gap: '0.5rem',
-                                                }}
-                                              >
-                                                <span style={{ color: '#666' }}>
-                                                  Balance (90%):
-                                                </span>
-                                                <span
-                                                  style={{
-                                                    fontWeight: 'bold',
-                                                    color: '#d32f2f',
-                                                  }}
-                                                >
-                                                  ₹
-                                                  {interaction.paymentBalance.advanceAmount?.toFixed(
-                                                    2
-                                                  )}
-                                                </span>
-                                              </div>
-                                              <div
-                                                style={{
-                                                  display: 'grid',
-                                                  gridTemplateColumns:
-                                                    '140px 1fr',
-                                                  gap: '0.5rem',
-                                                }}
-                                              >
-                                                <span style={{ color: '#666' }}>
-                                                  Submitted On:
-                                                </span>
-                                                <span
-                                                  style={{
-                                                    fontWeight: 'bold',
-                                                    color: '#1565c0',
-                                                  }}
-                                                >
-                                                  {interaction.paymentBalance
-                                                    .submittedAt
-                                                    ? new Date(
-                                                        interaction.paymentBalance.submittedAt
-                                                      ).toLocaleString('en-IN')
-                                                    : 'N/A'}
-                                                </span>
-                                              </div>
-                                              {interaction.paymentBalance
-                                                .verifiedAt && (
-                                                <div
-                                                  style={{
-                                                    display: 'grid',
-                                                    gridTemplateColumns:
-                                                      '140px 1fr',
-                                                    gap: '0.5rem',
-                                                  }}
-                                                >
-                                                  <span
-                                                    style={{ color: '#666' }}
-                                                  >
-                                                    Verified On:
-                                                  </span>
-                                                  <span
-                                                    style={{
-                                                      fontWeight: 'bold',
-                                                      color: '#2e7d32',
-                                                    }}
-                                                  >
-                                                    {new Date(
-                                                      interaction.paymentBalance.verifiedAt
-                                                    ).toLocaleString('en-IN')}
-                                                  </span>
-                                                </div>
-                                              )}
-                                            </div>
-                                          </div>
-
-                                          {/* Payment Screenshot */}
-                                          {interaction.paymentBalance
-                                            .screenshotUrl && (
-                                            <div>
-                                              <div
-                                                style={{
-                                                  fontSize: '0.9rem',
-                                                  fontWeight: 'bold',
-                                                  color: '#e65100',
-                                                  marginBottom: '0.5rem',
-                                                }}
-                                              >
-                                                Payment Screenshot:
-                                              </div>
-                                              <img
-                                                src={
-                                                  interaction.paymentBalance
-                                                    .screenshotUrl
-                                                }
-                                                alt='Balance Payment Screenshot'
-                                                style={{
-                                                  maxWidth: '100%',
-                                                  maxHeight: '300px',
-                                                  borderRadius: '8px',
-                                                  border: `2px solid ${
-                                                    interaction.paymentBalance
-                                                      .verificationStatus ===
-                                                    'verified'
-                                                      ? '#4caf50'
-                                                      : '#ff9800'
-                                                  }`,
-                                                  display: 'block',
-                                                  margin: '0 auto',
-                                                }}
-                                              />
-                                            </div>
-                                          )}
-
-                                          {/* Goods Delivered Confirmation - Show when marked as delivered */}
-                                          {interaction.goodsDelivered &&
-                                            !interaction.deliveryConfirmed && (
-                                              <div
-                                                style={{
-                                                  marginTop: '1.5rem',
-                                                  padding: '1.5rem',
-                                                  background: '#e8f5e9',
-                                                  border: '2px solid #4caf50',
-                                                  borderRadius: '8px',
-                                                  textAlign: 'center',
-                                                }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    fontSize: '2rem',
-                                                    marginBottom: '0.5rem',
-                                                  }}
-                                                >
-                                                  ✅
-                                                </div>
-                                                <h4
-                                                  style={{
-                                                    color: '#2e7d32',
-                                                    margin: '0 0 0.5rem 0',
-                                                  }}
-                                                >
-                                                  Goods Marked as Delivered
-                                                </h4>
-                                                <p
-                                                  style={{
-                                                    fontSize: '0.9rem',
-                                                    color: '#6d4c41',
-                                                    margin: '0 0 0.75rem 0',
-                                                  }}
-                                                >
-                                                  Buyer has been notified via
-                                                  email
-                                                </p>
-                                                <p
-                                                  style={{
-                                                    fontSize: '0.85rem',
-                                                    color: '#666',
-                                                    margin: 0,
-                                                  }}
-                                                >
-                                                  Delivered on:{' '}
-                                                  {interaction.goodsDeliveredAt
-                                                    ? new Date(
-                                                        interaction.goodsDeliveredAt
-                                                      ).toLocaleString(
-                                                        'en-IN',
-                                                        {
-                                                          day: 'numeric',
-                                                          month: 'long',
-                                                          year: 'numeric',
-                                                          hour: '2-digit',
-                                                          minute: '2-digit',
-                                                        }
-                                                      )
-                                                    : 'N/A'}
-                                                </p>
-                                                <div
-                                                  style={{
-                                                    marginTop: '1rem',
-                                                    padding: '1rem',
-                                                    background: '#fff9c4',
-                                                    borderRadius: '6px',
-                                                    fontSize: '0.85rem',
-                                                    color: '#f57f17',
-                                                  }}
-                                                >
-                                                  ⏳ Waiting for buyer to
-                                                  confirm receipt and release
-                                                  payment
-                                                </div>
-                                              </div>
-                                            )}
-
-                                          {/* Payment Released - Final confirmation */}
-                                          {interaction.paymentReleased && (
-                                            <div
-                                              style={{
-                                                marginTop: '1.5rem',
-                                                padding: '1.5rem',
-                                                background:
-                                                  'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
-                                                border: '2px solid #43a047',
-                                                borderRadius: '8px',
-                                                textAlign: 'center',
-                                              }}
-                                            >
-                                              <div
-                                                style={{
-                                                  fontSize: '3rem',
-                                                  marginBottom: '0.5rem',
-                                                }}
-                                              >
-                                                🎉
-                                              </div>
-                                              <h4
-                                                style={{
-                                                  color: '#2e7d32',
-                                                  margin: '0 0 0.5rem 0',
-                                                  fontSize: '1.3rem',
-                                                }}
-                                              >
-                                                Payment Released!
-                                              </h4>
-                                              <p
-                                                style={{
-                                                  fontSize: '1.1rem',
-                                                  fontWeight: 'bold',
-                                                  color: '#43a047',
-                                                  margin: '0.5rem 0',
-                                                }}
-                                              >
-                                                ₹
-                                                {interaction.paymentBalance.balanceAmount?.toFixed(
-                                                  2
-                                                )}
-                                              </p>
-                                              <p
-                                                style={{
-                                                  fontSize: '0.9rem',
-                                                  color: '#6d4c41',
-                                                  margin: '0.5rem 0',
-                                                }}
-                                              >
-                                                Transaction completed
-                                                successfully!
-                                              </p>
-                                              <p
-                                                style={{
-                                                  fontSize: '0.85rem',
-                                                  color: '#666',
-                                                  margin: '0.75rem 0 0 0',
-                                                }}
-                                              >
-                                                Released on:{' '}
-                                                {interaction.paymentReleasedAt
-                                                  ? new Date(
-                                                      interaction.paymentReleasedAt
-                                                    ).toLocaleString('en-IN', {
-                                                      day: 'numeric',
-                                                      month: 'long',
-                                                      year: 'numeric',
-                                                      hour: '2-digit',
-                                                      minute: '2-digit',
-                                                    })
-                                                  : 'N/A'}
-                                              </p>
-                                            </div>
-                                          )}
-
-                                          {/* Buyer Accepted Section - Show when delivery is confirmed */}
-                                          {interaction.deliveryConfirmed && (
-                                            <div
-                                              style={{
-                                                marginTop: '1.5rem',
-                                                padding: '1.5rem',
-                                                background:
-                                                  'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
-                                                border: '2px solid #2196f3',
-                                                borderRadius: '8px',
-                                              }}
-                                            >
-                                              <div
-                                                style={{
-                                                  display: 'flex',
-                                                  alignItems: 'center',
-                                                  gap: '1rem',
-                                                  marginBottom: '1rem',
-                                                }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    fontSize: '2.5rem',
-                                                  }}
-                                                >
-                                                  ✅
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                  <h4
-                                                    style={{
-                                                      color: '#1565c0',
-                                                      margin: '0 0 0.25rem 0',
-                                                      fontSize: '1.2rem',
-                                                    }}
-                                                  >
-                                                    Buyer Accepted Delivery
-                                                  </h4>
-                                                  <p
-                                                    style={{
-                                                      fontSize: '0.85rem',
-                                                      color: '#000000',
-                                                      margin: 0,
-                                                    }}
-                                                  >
-                                                    {interaction.buyer
-                                                      ?.fullName ||
-                                                      'Buyer'}{' '}
-                                                    has confirmed receipt of the
-                                                    goods
-                                                  </p>
-                                                </div>
-                                              </div>
-                                              <div
-                                                style={{
-                                                  background: 'white',
-                                                  padding: '1rem',
-                                                  borderRadius: '6px',
-                                                  border: '1px solid #90caf9',
-                                                }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    display: 'grid',
-                                                    gap: '0.5rem',
-                                                    fontSize: '0.9rem',
-                                                  }}
-                                                >
-                                                  <div
-                                                    style={{
-                                                      display: 'grid',
-                                                      gridTemplateColumns:
-                                                        '140px 1fr',
-                                                      gap: '0.5rem',
-                                                    }}
-                                                  >
-                                                    <span
-                                                      style={{ color: '#666' }}
-                                                    >
-                                                      Buyer Name:
-                                                    </span>
-                                                    <span
-                                                      style={{
-                                                        fontWeight: 'bold',
-                                                        color: '#000000',
-                                                      }}
-                                                    >
-                                                      {interaction.buyer
-                                                        ?.fullName || 'N/A'}
-                                                    </span>
-                                                  </div>
-                                                  <div
-                                                    style={{
-                                                      display: 'grid',
-                                                      gridTemplateColumns:
-                                                        '140px 1fr',
-                                                      gap: '0.5rem',
-                                                    }}
-                                                  >
-                                                    <span
-                                                      style={{ color: '#666' }}
-                                                    >
-                                                      Confirmed On:
-                                                    </span>
-                                                    <span
-                                                      style={{
-                                                        fontWeight: 'bold',
-                                                        color: '#000000',
-                                                      }}
-                                                    >
-                                                      {interaction.deliveryConfirmedAt
-                                                        ? new Date(
-                                                            interaction.deliveryConfirmedAt
-                                                          ).toLocaleString(
-                                                            'en-IN',
-                                                            {
-                                                              day: 'numeric',
-                                                              month: 'long',
-                                                              year: 'numeric',
-                                                              hour: '2-digit',
-                                                              minute: '2-digit',
-                                                            }
-                                                          )
-                                                        : 'N/A'}
-                                                    </span>
-                                                  </div>
-                                                  <div
-                                                    style={{
-                                                      display: 'grid',
-                                                      gridTemplateColumns:
-                                                        '140px 1fr',
-                                                      gap: '0.5rem',
-                                                    }}
-                                                  >
-                                                    <span
-                                                      style={{ color: '#666' }}
-                                                    >
-                                                      Status:
-                                                    </span>
-                                                    <span
-                                                      style={{
-                                                        fontWeight: 'bold',
-                                                        color: '#2e7d32',
-                                                      }}
-                                                    >
-                                                      ✅ Completed
-                                                    </span>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-
-                                    {/* Notify as Product Delivered Button - Outside balance payment section */}
-                                    {interaction.paymentBalance &&
-                                      interaction.paymentBalance
-                                        .verificationStatus === 'verified' &&
-                                      !interaction.goodsDelivered && (
-                                        <div style={{ marginTop: '1.5rem' }}>
-                                          <button
-                                            onClick={() =>
-                                              handleMarkGoodsDelivered(
-                                                interaction._id
-                                              )
-                                            }
-                                            style={{
-                                              width: '100%',
-                                              background:
-                                                'linear-gradient(135deg, #43a047 0%, #2e7d32 100%)',
-                                              color: 'white',
-                                              border: 'none',
-                                              borderRadius: '8px',
-                                              padding: '1rem',
-                                              cursor: 'pointer',
-                                              fontSize: '1rem',
-                                              fontWeight: 'bold',
-                                              transition: 'all 0.3s ease',
-                                              boxShadow:
-                                                '0 4px 6px rgba(0,0,0,0.1)',
-                                            }}
-                                            onMouseEnter={(e) => {
-                                              e.currentTarget.style.transform =
-                                                'translateY(-2px)';
-                                              e.currentTarget.style.boxShadow =
-                                                '0 6px 12px rgba(0,0,0,0.15)';
-                                            }}
-                                            onMouseLeave={(e) => {
-                                              e.currentTarget.style.transform =
-                                                'translateY(0)';
-                                              e.currentTarget.style.boxShadow =
-                                                '0 4px 6px rgba(0,0,0,0.1)';
-                                            }}
-                                          >
-                                            🚚 Notify as Product Delivered
-                                          </button>
-                                          <p
-                                            style={{
-                                              fontSize: '0.85rem',
-                                              color: '#666',
-                                              textAlign: 'center',
-                                              marginTop: '0.75rem',
-                                              marginBottom: 0,
-                                            }}
-                                          >
-                                            Click this button after delivering
-                                            the goods to notify the buyer
-                                          </p>
-                                        </div>
-                                      )}
                                   </div>
                                 ) : interaction.payment?.verificationStatus ===
                                   'rejected' ? (
@@ -7811,273 +6489,6 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                   {acceptanceConfirmModal.action === 'accept'
                     ? '✅ Confirm Accept'
                     : '❌ Confirm Reject'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Delivery Confirmation Modal - Farmer */}
-        {deliveryConfirmModal.isOpen && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.7)',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              zIndex: 1000,
-              padding: '20px',
-            }}
-            onClick={() =>
-              setDeliveryConfirmModal({ isOpen: false, interactionId: '' })
-            }
-          >
-            <div
-              style={{
-                background: 'white',
-                borderRadius: '12px',
-                padding: '2rem',
-                maxWidth: '500px',
-                width: '100%',
-                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🚚</div>
-                <h3
-                  style={{
-                    color: '#2e7d32',
-                    margin: '0 0 1rem 0',
-                    fontSize: '1.5rem',
-                  }}
-                >
-                  Mark Goods as Delivered?
-                </h3>
-                <p
-                  style={{
-                    color: '#6d4c41',
-                    fontSize: '1rem',
-                    lineHeight: '1.6',
-                    margin: 0,
-                  }}
-                >
-                  Are you sure you want to mark the goods as delivered? This
-                  will notify the buyer to confirm receipt and release the
-                  balance payment.
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                <button
-                  onClick={() =>
-                    setDeliveryConfirmModal({
-                      isOpen: false,
-                      interactionId: '',
-                    })
-                  }
-                  style={{
-                    flex: 1,
-                    background: '#f5f5f5',
-                    color: '#666',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '0.75rem',
-                    cursor: 'pointer',
-                    fontSize: '1rem',
-                    fontWeight: 'bold',
-                    transition: 'all 0.3s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#e0e0e0';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#f5f5f5';
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmMarkGoodsDelivered}
-                  style={{
-                    flex: 1,
-                    background:
-                      'linear-gradient(135deg, #43a047 0%, #2e7d32 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '0.75rem',
-                    cursor: 'pointer',
-                    fontSize: '1rem',
-                    fontWeight: 'bold',
-                    transition: 'all 0.3s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow =
-                      '0 6px 12px rgba(0,0,0,0.15)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  ✅ Confirm Delivery
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Buyer Delivery Confirmation Modal */}
-        {buyerDeliveryConfirmModal.isOpen && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.7)',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              zIndex: 1000,
-              padding: '20px',
-            }}
-            onClick={() =>
-              setBuyerDeliveryConfirmModal({ isOpen: false, interactionId: '' })
-            }
-          >
-            <div
-              style={{
-                background: 'white',
-                borderRadius: '12px',
-                padding: '2rem',
-                maxWidth: '550px',
-                width: '100%',
-                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📦</div>
-                <h3
-                  style={{
-                    color: '#2e7d32',
-                    margin: '0 0 1rem 0',
-                    fontSize: '1.5rem',
-                  }}
-                >
-                  Confirm Product Receipt?
-                </h3>
-                <p
-                  style={{
-                    color: '#6d4c41',
-                    fontSize: '1rem',
-                    lineHeight: '1.6',
-                    margin: 0,
-                  }}
-                >
-                  Are you sure you have received the goods in good condition?
-                  This will release the balance payment to the farmer and
-                  complete the transaction.
-                </p>
-              </div>
-
-              <div
-                style={{
-                  background: '#fff9c4',
-                  padding: '1rem',
-                  borderRadius: '8px',
-                  border: '1px solid #f57f17',
-                  marginBottom: '1.5rem',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: '0.9rem',
-                    color: '#f57f17',
-                    fontWeight: 'bold',
-                    marginBottom: '0.5rem',
-                  }}
-                >
-                  ⚠️ Important:
-                </div>
-                <div
-                  style={{
-                    fontSize: '0.85rem',
-                    color: '#6d4c41',
-                    lineHeight: '1.5',
-                  }}
-                >
-                  • Verify the product quality matches your order
-                  <br />
-                  • Check the quantity is correct
-                  <br />• This action cannot be undone
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button
-                  onClick={() =>
-                    setBuyerDeliveryConfirmModal({
-                      isOpen: false,
-                      interactionId: '',
-                    })
-                  }
-                  style={{
-                    flex: 1,
-                    background: '#f5f5f5',
-                    color: '#666',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '0.75rem',
-                    cursor: 'pointer',
-                    fontSize: '1rem',
-                    fontWeight: 'bold',
-                    transition: 'all 0.3s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#e0e0e0';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#f5f5f5';
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmBuyerDelivery}
-                  style={{
-                    flex: 1,
-                    background:
-                      'linear-gradient(135deg, #43a047 0%, #2e7d32 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '0.75rem',
-                    cursor: 'pointer',
-                    fontSize: '1rem',
-                    fontWeight: 'bold',
-                    transition: 'all 0.3s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow =
-                      '0 6px 12px rgba(0,0,0,0.15)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  ✅ Confirm & Release Payment
                 </button>
               </div>
             </div>

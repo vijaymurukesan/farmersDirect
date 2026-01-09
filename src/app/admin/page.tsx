@@ -4272,135 +4272,333 @@ export default function AdminPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {pendingPayments.map((payment) => (
-                          <tr
-                            key={payment._id}
-                            style={{
-                              borderBottom: '1px solid #e0e0e0',
-                              transition: 'background 0.2s ease',
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#f1f8e9';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'white';
-                            }}
-                          >
-                            <td style={{ padding: '1rem' }}>
-                              <div
-                                style={{ fontWeight: 'bold', color: '#2e7d32' }}
-                              >
-                                {payment.buyer?.fullName || 'N/A'}
-                              </div>
-                              <div
-                                style={{ fontSize: '0.85rem', color: '#666' }}
-                              >
-                                {payment.buyerid}
-                              </div>
-                            </td>
-                            <td style={{ padding: '1rem', color: '#6d4c41' }}>
-                              {payment.buyer?.companyName || 'N/A'}
-                            </td>
-                            <td style={{ padding: '1rem' }}>
-                              <code
+                        {pendingPayments.flatMap((payment) => {
+                          const rows = [];
+
+                          // Add row for pending advance payment (10%)
+                          if (
+                            payment.payment?.verificationStatus === 'pending'
+                          ) {
+                            rows.push(
+                              <tr
+                                key={`${payment._id}-advance`}
                                 style={{
-                                  background: '#e3f2fd',
-                                  padding: '0.25rem 0.5rem',
-                                  borderRadius: '4px',
-                                  fontSize: '0.85rem',
-                                  fontFamily: 'monospace',
-                                  color: '#01579b',
-                                }}
-                              >
-                                {payment.payment?.transactionId || 'N/A'}
-                              </code>
-                            </td>
-                            <td style={{ padding: '1rem', textAlign: 'right' }}>
-                              <div
-                                style={{
-                                  fontWeight: 'bold',
-                                  color: '#f57f17',
-                                  fontSize: '1.1rem',
-                                }}
-                              >
-                                ₹
-                                {payment.payment?.advanceAmount?.toFixed(2) ||
-                                  '0.00'}
-                              </div>
-                            </td>
-                            <td style={{ padding: '1rem' }}>
-                              <span
-                                style={{
-                                  background: '#fff9c4',
-                                  padding: '0.25rem 0.75rem',
-                                  borderRadius: '12px',
-                                  fontSize: '0.85rem',
-                                  fontWeight: 'bold',
-                                  color: '#f57f17',
-                                }}
-                              >
-                                Advance (10%)
-                              </span>
-                            </td>
-                            <td style={{ padding: '1rem' }}>
-                              <div
-                                style={{ fontWeight: 'bold', color: '#2e7d32' }}
-                              >
-                                {payment.farmer?.contactPerson || 'N/A'}
-                              </div>
-                              <div
-                                style={{ fontSize: '0.85rem', color: '#666' }}
-                              >
-                                {payment.farmerid}
-                              </div>
-                            </td>
-                            <td
-                              style={{
-                                padding: '1rem',
-                                fontSize: '0.85rem',
-                                color: '#666',
-                              }}
-                            >
-                              {payment.payment?.submittedAt
-                                ? new Date(
-                                    payment.payment.submittedAt
-                                  ).toLocaleString()
-                                : 'N/A'}
-                            </td>
-                            <td
-                              style={{ padding: '1rem', textAlign: 'center' }}
-                            >
-                              <button
-                                onClick={() =>
-                                  router.push(`/account/${payment.buyerid}`)
-                                }
-                                style={{
-                                  background: '#0277bd',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  padding: '0.5rem 1rem',
-                                  cursor: 'pointer',
-                                  fontSize: '0.9rem',
-                                  fontWeight: 'bold',
-                                  transition: 'all 0.2s ease',
+                                  borderBottom: '1px solid #e0e0e0',
+                                  transition: 'background 0.2s ease',
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = '#01579b';
-                                  e.currentTarget.style.transform =
-                                    'translateY(-1px)';
+                                  e.currentTarget.style.background = '#f1f8e9';
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = '#0277bd';
-                                  e.currentTarget.style.transform =
-                                    'translateY(0)';
+                                  e.currentTarget.style.background = 'white';
                                 }}
                               >
-                                👁️ View Details
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                                <td style={{ padding: '1rem' }}>
+                                  <div
+                                    style={{
+                                      fontWeight: 'bold',
+                                      color: '#2e7d32',
+                                    }}
+                                  >
+                                    {payment.buyer?.fullName || 'N/A'}
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: '0.85rem',
+                                      color: '#666',
+                                    }}
+                                  >
+                                    {payment.buyerid}
+                                  </div>
+                                </td>
+                                <td
+                                  style={{ padding: '1rem', color: '#6d4c41' }}
+                                >
+                                  {payment.buyer?.companyName || 'N/A'}
+                                </td>
+                                <td style={{ padding: '1rem' }}>
+                                  <code
+                                    style={{
+                                      background: '#e3f2fd',
+                                      padding: '0.25rem 0.5rem',
+                                      borderRadius: '4px',
+                                      fontSize: '0.85rem',
+                                      fontFamily: 'monospace',
+                                      color: '#01579b',
+                                    }}
+                                  >
+                                    {payment.payment?.transactionId || 'N/A'}
+                                  </code>
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '1rem',
+                                    textAlign: 'right',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontWeight: 'bold',
+                                      color: '#f57f17',
+                                      fontSize: '1.1rem',
+                                    }}
+                                  >
+                                    ₹
+                                    {payment.payment?.advanceAmount?.toFixed(
+                                      2
+                                    ) || '0.00'}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '1rem' }}>
+                                  <span
+                                    style={{
+                                      background: '#fff9c4',
+                                      padding: '0.25rem 0.75rem',
+                                      borderRadius: '12px',
+                                      fontSize: '0.85rem',
+                                      fontWeight: 'bold',
+                                      color: '#f57f17',
+                                    }}
+                                  >
+                                    Advance (10%)
+                                  </span>
+                                </td>
+                                <td style={{ padding: '1rem' }}>
+                                  <div
+                                    style={{
+                                      fontWeight: 'bold',
+                                      color: '#2e7d32',
+                                    }}
+                                  >
+                                    {payment.farmer?.contactPerson || 'N/A'}
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: '0.85rem',
+                                      color: '#666',
+                                    }}
+                                  >
+                                    {payment.farmerid}
+                                  </div>
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '1rem',
+                                    fontSize: '0.85rem',
+                                    color: '#666',
+                                  }}
+                                >
+                                  {payment.payment?.submittedAt
+                                    ? new Date(
+                                        payment.payment.submittedAt
+                                      ).toLocaleString()
+                                    : 'N/A'}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '1rem',
+                                    textAlign: 'center',
+                                  }}
+                                >
+                                  <button
+                                    onClick={() =>
+                                      router.push(`/account/${payment.buyerid}`)
+                                    }
+                                    style={{
+                                      background: '#0277bd',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '6px',
+                                      padding: '0.5rem 1rem',
+                                      cursor: 'pointer',
+                                      fontSize: '0.9rem',
+                                      fontWeight: 'bold',
+                                      transition: 'all 0.2s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background =
+                                        '#01579b';
+                                      e.currentTarget.style.transform =
+                                        'translateY(-1px)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background =
+                                        '#0277bd';
+                                      e.currentTarget.style.transform =
+                                        'translateY(0)';
+                                    }}
+                                  >
+                                    👁️ View Details
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          // Add row for pending balance payment (90%)
+                          if (
+                            payment.paymentBalance?.verificationStatus ===
+                            'pending'
+                          ) {
+                            rows.push(
+                              <tr
+                                key={`${payment._id}-balance`}
+                                style={{
+                                  borderBottom: '1px solid #e0e0e0',
+                                  transition: 'background 0.2s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = '#e8f5e9';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = 'white';
+                                }}
+                              >
+                                <td style={{ padding: '1rem' }}>
+                                  <div
+                                    style={{
+                                      fontWeight: 'bold',
+                                      color: '#2e7d32',
+                                    }}
+                                  >
+                                    {payment.buyer?.fullName || 'N/A'}
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: '0.85rem',
+                                      color: '#666',
+                                    }}
+                                  >
+                                    {payment.buyerid}
+                                  </div>
+                                </td>
+                                <td
+                                  style={{ padding: '1rem', color: '#6d4c41' }}
+                                >
+                                  {payment.buyer?.companyName || 'N/A'}
+                                </td>
+                                <td style={{ padding: '1rem' }}>
+                                  <code
+                                    style={{
+                                      background: '#e3f2fd',
+                                      padding: '0.25rem 0.5rem',
+                                      borderRadius: '4px',
+                                      fontSize: '0.85rem',
+                                      fontFamily: 'monospace',
+                                      color: '#01579b',
+                                    }}
+                                  >
+                                    {payment.paymentBalance?.transactionId ||
+                                      'N/A'}
+                                  </code>
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '1rem',
+                                    textAlign: 'right',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontWeight: 'bold',
+                                      color: '#2e7d32',
+                                      fontSize: '1.1rem',
+                                    }}
+                                  >
+                                    ₹
+                                    {payment.paymentBalance?.balanceAmount?.toFixed(
+                                      2
+                                    ) || '0.00'}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '1rem' }}>
+                                  <span
+                                    style={{
+                                      background: '#c8e6c9',
+                                      padding: '0.25rem 0.75rem',
+                                      borderRadius: '12px',
+                                      fontSize: '0.85rem',
+                                      fontWeight: 'bold',
+                                      color: '#2e7d32',
+                                    }}
+                                  >
+                                    Balance (90%)
+                                  </span>
+                                </td>
+                                <td style={{ padding: '1rem' }}>
+                                  <div
+                                    style={{
+                                      fontWeight: 'bold',
+                                      color: '#2e7d32',
+                                    }}
+                                  >
+                                    {payment.farmer?.contactPerson || 'N/A'}
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: '0.85rem',
+                                      color: '#666',
+                                    }}
+                                  >
+                                    {payment.farmerid}
+                                  </div>
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '1rem',
+                                    fontSize: '0.85rem',
+                                    color: '#666',
+                                  }}
+                                >
+                                  {payment.paymentBalance?.submittedAt
+                                    ? new Date(
+                                        payment.paymentBalance.submittedAt
+                                      ).toLocaleString()
+                                    : 'N/A'}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '1rem',
+                                    textAlign: 'center',
+                                  }}
+                                >
+                                  <button
+                                    onClick={() =>
+                                      router.push(`/account/${payment.buyerid}`)
+                                    }
+                                    style={{
+                                      background: '#0277bd',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '6px',
+                                      padding: '0.5rem 1rem',
+                                      cursor: 'pointer',
+                                      fontSize: '0.9rem',
+                                      fontWeight: 'bold',
+                                      transition: 'all 0.2s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background =
+                                        '#01579b';
+                                      e.currentTarget.style.transform =
+                                        'translateY(-1px)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background =
+                                        '#0277bd';
+                                      e.currentTarget.style.transform =
+                                        'translateY(0)';
+                                    }}
+                                  >
+                                    👁️ View Details
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return rows;
+                        })}
                       </tbody>
                     </table>
                   </div>
