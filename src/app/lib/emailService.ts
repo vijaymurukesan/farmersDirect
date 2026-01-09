@@ -1465,3 +1465,364 @@ export const sendContractSignedEmail = async (
   }
 };
 
+// Send contract PDF email when payment is approved
+export const sendContractPdfEmail = async (
+  farmerEmail: string,
+  buyerEmail: string,
+  farmerName: string,
+  buyerName: string,
+  productName: string,
+  contractPdfBuffer: Buffer
+) => {
+  const transporter = createTransporter();
+
+  const today = new Date().toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  // Email to Farmer
+  const farmerMailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: farmerEmail,
+    subject: `📋 Contract Agreement - ${productName}`,
+    attachments: [
+      {
+        filename: `Contract_${productName.replace(/\s+/g, '_')}_${Date.now()}.pdf`,
+        content: contractPdfBuffer,
+        contentType: 'application/pdf',
+      },
+    ],
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+              padding: 30px;
+              text-align: center;
+              border-radius: 12px 12px 0 0;
+            }
+            .header h1 {
+              color: #2e7d32;
+              margin: 0;
+              font-size: 24px;
+            }
+            .content {
+              background: white;
+              padding: 30px;
+              border-left: 4px solid #388e3c;
+              border-right: 4px solid #388e3c;
+            }
+            .highlight-box {
+              background: #fff9c4;
+              border-left: 4px solid #f57f17;
+              padding: 15px;
+              margin: 20px 0;
+              border-radius: 4px;
+            }
+            .info-box {
+              background: #e3f2fd;
+              border: 2px solid #2196f3;
+              padding: 15px;
+              margin: 20px 0;
+              border-radius: 8px;
+            }
+            .button {
+              display: inline-block;
+              padding: 12px 30px;
+              background: #388e3c;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 20px;
+              color: #6d4c41;
+              font-size: 12px;
+              background: #f5f5f5;
+              padding: 20px;
+              border-radius: 0 0 12px 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🌱 Farmers Direct</h1>
+            <p style="margin: 10px 0 0 0; color: #388e3c;">Contract Agreement Ready</p>
+          </div>
+          <div class="content">
+            <h2 style="color: #388e3c;">📋 Official Contract Agreement</h2>
+            <p>Dear ${farmerName},</p>
+            <p>Great news! The buyer has completed the 10% advance payment, and your contract agreement is now ready.</p>
+            
+            <div class="highlight-box">
+              <h3 style="color: #f57f17; margin: 0 0 10px 0;">Payment Verified ✅</h3>
+              <p style="margin: 0;"><strong>Product:</strong> ${productName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Buyer:</strong> ${buyerName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Status:</strong> Ready for Delivery</p>
+            </div>
+
+            <div class="info-box">
+              <p style="margin: 0; font-weight: bold; color: #1565c0;">📎 Contract PDF Attached</p>
+              <p style="margin: 10px 0 0 0; font-size: 14px;">
+                Please find the official contract agreement attached to this email. This document includes:
+              </p>
+              <ul style="margin: 10px 0; padding-left: 20px;">
+                <li>Complete terms and conditions</li>
+                <li>Both party signatures</li>
+                <li>Company authorization and witness</li>
+                <li>Official Farmers Direct seal</li>
+              </ul>
+            </div>
+
+            <p><strong>Next Steps:</strong></p>
+            <ul>
+              <li>Review the attached contract PDF</li>
+              <li>Prepare the product for delivery</li>
+              <li>Coordinate with the buyer for pickup/delivery</li>
+              <li>Complete the transaction as per agreement</li>
+            </ul>
+
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login" class="button">
+                📊 View Dashboard
+              </a>
+            </div>
+
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">
+              <strong>Important:</strong> Keep this contract PDF for your records. It serves as legal proof of the transaction.
+            </p>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+            <p style="margin-top: 10px;">
+              This is an automated message. Please do not reply to this email.
+            </p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Contract Agreement Ready
+      
+      Dear ${farmerName},
+      
+      Great news! The buyer has completed the 10% advance payment, and your contract agreement is now ready.
+      
+      Product: ${productName}
+      Buyer: ${buyerName}
+      Status: Ready for Delivery
+      Date: ${today}
+      
+      The official contract PDF is attached to this email. It includes:
+      - Complete terms and conditions
+      - Both party signatures
+      - Company authorization and witness
+      - Official Farmers Direct seal
+      
+      Next Steps:
+      1. Review the attached contract PDF
+      2. Prepare the product for delivery
+      3. Coordinate with the buyer for pickup/delivery
+      4. Complete the transaction as per agreement
+      
+      Dashboard: ${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login
+      
+      Important: Keep this contract PDF for your records.
+      
+      © 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  // Email to Buyer
+  const buyerMailOptions = {
+    from: `"Farmers Direct" <${process.env.EMAIL_USER}>`,
+    to: buyerEmail,
+    subject: `📋 Contract Agreement - ${productName}`,
+    attachments: [
+      {
+        filename: `Contract_${productName.replace(/\s+/g, '_')}_${Date.now()}.pdf`,
+        content: contractPdfBuffer,
+        contentType: 'application/pdf',
+      },
+    ],
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+              padding: 30px;
+              text-align: center;
+              border-radius: 12px 12px 0 0;
+            }
+            .header h1 {
+              color: #1565c0;
+              margin: 0;
+              font-size: 24px;
+            }
+            .content {
+              background: white;
+              padding: 30px;
+              border-left: 4px solid #2196f3;
+              border-right: 4px solid #2196f3;
+            }
+            .highlight-box {
+              background: #fff9c4;
+              border-left: 4px solid #f57f17;
+              padding: 15px;
+              margin: 20px 0;
+              border-radius: 4px;
+            }
+            .info-box {
+              background: #e8f5e9;
+              border: 2px solid #4caf50;
+              padding: 15px;
+              margin: 20px 0;
+              border-radius: 8px;
+            }
+            .button {
+              display: inline-block;
+              padding: 12px 30px;
+              background: #2196f3;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 20px;
+              color: #6d4c41;
+              font-size: 12px;
+              background: #f5f5f5;
+              padding: 20px;
+              border-radius: 0 0 12px 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🌱 Farmers Direct</h1>
+            <p style="margin: 10px 0 0 0; color: #1565c0;">Contract Agreement Ready</p>
+          </div>
+          <div class="content">
+            <h2 style="color: #2196f3;">📋 Official Contract Agreement</h2>
+            <p>Dear ${buyerName},</p>
+            <p>Your payment has been verified! Your contract agreement is now ready.</p>
+            
+            <div class="highlight-box">
+              <h3 style="color: #f57f17; margin: 0 0 10px 0;">Payment Confirmed ✅</h3>
+              <p style="margin: 0;"><strong>Product:</strong> ${productName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Seller:</strong> ${farmerName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Status:</strong> Awaiting Delivery</p>
+            </div>
+
+            <div class="info-box">
+              <p style="margin: 0; font-weight: bold; color: #2e7d32;">📎 Contract PDF Attached</p>
+              <p style="margin: 10px 0 0 0; font-size: 14px;">
+                Please find the official contract agreement attached to this email. This document includes:
+              </p>
+              <ul style="margin: 10px 0; padding-left: 20px;">
+                <li>Complete terms and conditions</li>
+                <li>Both party signatures</li>
+                <li>Company authorization and witness</li>
+                <li>Official Farmers Direct seal</li>
+              </ul>
+            </div>
+
+            <p><strong>Next Steps:</strong></p>
+            <ul>
+              <li>Review the attached contract PDF</li>
+              <li>Coordinate with the farmer for delivery</li>
+              <li>Complete remaining payment upon delivery</li>
+              <li>Provide feedback after transaction</li>
+            </ul>
+
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login" class="button">
+                📊 View Dashboard
+              </a>
+            </div>
+
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">
+              <strong>Important:</strong> Keep this contract PDF for your records. It serves as legal proof of the transaction.
+            </p>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Farmers Direct. All rights reserved.</p>
+            <p style="margin-top: 10px;">
+              This is an automated message. Please do not reply to this email.
+            </p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `
+      Farmers Direct - Contract Agreement Ready
+      
+      Dear ${buyerName},
+      
+      Your payment has been verified! Your contract agreement is now ready.
+      
+      Product: ${productName}
+      Seller: ${farmerName}
+      Status: Awaiting Delivery
+      Date: ${today}
+      
+      The official contract PDF is attached to this email. It includes:
+      - Complete terms and conditions
+      - Both party signatures
+      - Company authorization and witness
+      - Official Farmers Direct seal
+      
+      Next Steps:
+      1. Review the attached contract PDF
+      2. Coordinate with the farmer for delivery
+      3. Complete remaining payment upon delivery
+      4. Provide feedback after transaction
+      
+      Dashboard: ${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login
+      
+      Important: Keep this contract PDF for your records.
+      
+      © 2026 Farmers Direct. All rights reserved.
+    `,
+  };
+
+  try {
+    await Promise.all([
+      transporter.sendMail(farmerMailOptions),
+      transporter.sendMail(buyerMailOptions)
+    ]);
+    console.log('Contract PDF emails sent successfully to both parties');
+    return { success: true };
+  } catch (error) {
+    console.error('Error sending contract PDF emails:', error);
+    throw error;
+  }
+};

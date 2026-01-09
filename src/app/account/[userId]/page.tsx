@@ -50,6 +50,7 @@ interface Interaction {
   };
   buyerNotes: string;
   farmerResponse: string;
+  buyerResponse: string;
   farmerAccepted?: boolean;
   buyerAccepted?: boolean;
   contract?: {
@@ -58,6 +59,17 @@ interface Interaction {
     farmerSignedAt?: string;
     buyerSignature?: string;
     buyerSignedAt?: string;
+  };
+  payment?: {
+    transactionId: string;
+    advanceAmount: number;
+    totalAmount: number;
+    screenshotUrl?: string | null;
+    submittedAt?: string;
+    verificationStatus?: 'pending' | 'verified' | 'rejected';
+    verifiedAt?: string;
+    rejectedAt?: string;
+    rejectionReason?: string;
   };
   createdAt: string;
   updatedAt: string;
@@ -105,6 +117,49 @@ export default function AccountPage() {
     isOpen: boolean;
     interactionId: string;
   }>({ isOpen: false, interactionId: '' });
+
+  // Payment state
+  const [paymentScreenshot, setPaymentScreenshot] = useState<{
+    [key: string]: File | null;
+  }>({});
+  const [paymentScreenshotPreview, setPaymentScreenshotPreview] = useState<{
+    [key: string]: string;
+  }>({});
+  const [paymentUploading, setPaymentUploading] = useState<{
+    [key: string]: boolean;
+  }>({});
+
+  // Payment rejection modal state (admin only)
+  const [paymentRejectionModal, setPaymentRejectionModal] = useState<{
+    isOpen: boolean;
+    interactionId: string;
+  }>({ isOpen: false, interactionId: '' });
+  const [paymentRejectionReason, setPaymentRejectionReason] = useState('');
+  const [paymentCustomReason, setPaymentCustomReason] = useState('');
+
+  // Acceptance confirmation modal state
+  const [acceptanceConfirmModal, setAcceptanceConfirmModal] = useState<{
+    isOpen: boolean;
+    interactionId: string;
+    action: 'accept' | 'reject';
+    userType: 'farmer' | 'buyer';
+  }>({
+    isOpen: false,
+    interactionId: '',
+    action: 'accept',
+    userType: 'farmer',
+  });
+
+  const paymentRejectionReasons = [
+    'Payment screenshot is not clear or readable',
+    'Transaction ID does not match',
+    'Payment amount is incorrect',
+    'Screenshot appears to be fake or tampered',
+    'Payment not received in our account',
+    'Wrong bank account used for payment',
+    'Screenshot is incomplete',
+    'Other',
+  ];
 
   // Check authentication and ownership
   useEffect(() => {
@@ -184,11 +239,19 @@ export default function AccountPage() {
           interaction.farmerAccepted &&
           interaction.buyerAccepted &&
           interaction.status !== 'contract' &&
+          interaction.status !== 'payment' &&
+          interaction.status !== 'awaiting-delivery' &&
           interaction.status !== 'completed'
         );
       }
       if (interestSubTab === 'contract') {
         return interaction.status === 'contract';
+      }
+      if (interestSubTab === 'payment') {
+        return interaction.status === 'payment';
+      }
+      if (interestSubTab === 'awaiting-delivery') {
+        return interaction.status === 'awaiting-delivery';
       }
       if (interestSubTab === 'completed') {
         return interaction.status === 'completed';
@@ -200,7 +263,7 @@ export default function AccountPage() {
     return true;
   });
 
-  // Handle reply submission
+  // Handle farmer reply submission
   const handleReplySubmit = async (
     interactionId: string,
     currentResponse: string
@@ -252,13 +315,81 @@ export default function AccountPage() {
     }
   };
 
+  // Handle buyer reply submission
+  const handleBuyerReplySubmit = async (
+    interactionId: string,
+    currentResponse: string
+  ) => {
+    const reply = replyText[interactionId];
+    if (!reply || !reply.trim()) return;
+
+    setReplyLoading({ ...replyLoading, [interactionId]: true });
+
+    try {
+      const response = await fetch('/api/interactions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interactionId: interactionId,
+          buyerResponse: currentResponse
+            ? `${currentResponse}\n\n---\n\n${reply.trim()}`
+            : reply.trim(),
+          status: 'pending',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setSnackbar({
+          isOpen: true,
+          message: '✅ Reply sent successfully!',
+          type: 'success',
+        });
+        setReplyText({ ...replyText, [interactionId]: '' });
+        window.location.reload();
+      } else {
+        setSnackbar({
+          isOpen: true,
+          message: result.message || 'Failed to send reply',
+          type: 'error',
+        });
+      }
+    } catch (error) {
+      console.error('Error sending reply:', error);
+      setSnackbar({
+        isOpen: true,
+        message: 'Error sending reply. Please try again.',
+        type: 'error',
+      });
+    } finally {
+      setReplyLoading({ ...replyLoading, [interactionId]: false });
+    }
+  };
+
   // Handle farmer accept/reject
   const handleFarmerAction = async (
     interactionId: string,
     action: 'accept' | 'reject'
   ) => {
-    if (!confirm(`Are you sure you want to ${action} this interaction?`))
-      return;
+    // Open confirmation modal instead of browser confirm
+    setAcceptanceConfirmModal({
+      isOpen: true,
+      interactionId,
+      action,
+      userType: 'farmer',
+    });
+  };
+
+  // Confirm farmer action (called from modal)
+  const confirmFarmerAction = async () => {
+    const { interactionId, action } = acceptanceConfirmModal;
+    setAcceptanceConfirmModal({
+      isOpen: false,
+      interactionId: '',
+      action: 'accept',
+      userType: 'farmer',
+    });
 
     try {
       const response = await fetch('/api/interactions', {
@@ -302,8 +433,24 @@ export default function AccountPage() {
     interactionId: string,
     action: 'accept' | 'reject'
   ) => {
-    if (!confirm(`Are you sure you want to ${action} this interaction?`))
-      return;
+    // Open confirmation modal instead of browser confirm
+    setAcceptanceConfirmModal({
+      isOpen: true,
+      interactionId,
+      action,
+      userType: 'buyer',
+    });
+  };
+
+  // Confirm buyer action (called from modal)
+  const confirmBuyerAction = async () => {
+    const { interactionId, action } = acceptanceConfirmModal;
+    setAcceptanceConfirmModal({
+      isOpen: false,
+      interactionId: '',
+      action: 'accept',
+      userType: 'buyer',
+    });
 
     try {
       const response = await fetch('/api/interactions', {
@@ -635,6 +782,305 @@ Note: This is a legally binding electronic document. By signing this agreement, 
     }
   };
 
+  // Handle payment screenshot upload
+  const handlePaymentScreenshotChange = (
+    interactionId: string,
+    file: File | null
+  ) => {
+    if (file) {
+      // Validate file type
+      const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+      if (!validTypes.includes(file.type)) {
+        setSnackbar({
+          isOpen: true,
+          message: 'Please upload a valid image file (JPEG, PNG, or WebP)',
+          type: 'error',
+        });
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setSnackbar({
+          isOpen: true,
+          message: 'File size must be less than 5MB',
+          type: 'error',
+        });
+        return;
+      }
+
+      setPaymentScreenshot({ ...paymentScreenshot, [interactionId]: file });
+
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPaymentScreenshotPreview({
+          ...paymentScreenshotPreview,
+          [interactionId]: reader.result as string,
+        });
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setPaymentScreenshot({ ...paymentScreenshot, [interactionId]: null });
+      setPaymentScreenshotPreview({
+        ...paymentScreenshotPreview,
+        [interactionId]: '',
+      });
+    }
+  };
+
+  // Handle payment submission
+  const handlePaymentSubmit = async (interactionId: string) => {
+    const file = paymentScreenshot[interactionId];
+    if (!file) {
+      setSnackbar({
+        isOpen: true,
+        message: 'Please upload payment screenshot before submitting',
+        type: 'error',
+      });
+      return;
+    }
+
+    try {
+      setPaymentUploading({ ...paymentUploading, [interactionId]: true });
+
+      // Upload screenshot to Vercel Blob
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('interactionId', interactionId);
+
+      const uploadResponse = await fetch('/api/upload-payment-screenshot', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        },
+        body: formData,
+      });
+
+      const uploadResult = await uploadResponse.json();
+
+      if (!uploadResponse.ok || !uploadResult.success) {
+        throw new Error(uploadResult.message || 'Failed to upload screenshot');
+      }
+
+      // Update interaction with payment info
+      const updateResponse = await fetch('/api/interactions', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          interactionId,
+          paymentScreenshot: uploadResult.data.url,
+        }),
+      });
+
+      const updateResult = await updateResponse.json();
+
+      if (updateResponse.ok && updateResult.success) {
+        setSnackbar({
+          isOpen: true,
+          message: '✅ Payment confirmation submitted! Pending verification.',
+          type: 'success',
+        });
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        throw new Error(updateResult.message || 'Failed to submit payment');
+      }
+    } catch (error) {
+      console.error('Error submitting payment:', error);
+      setSnackbar({
+        isOpen: true,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Error submitting payment. Please try again.',
+        type: 'error',
+      });
+    } finally {
+      setPaymentUploading({ ...paymentUploading, [interactionId]: false });
+    }
+  };
+
+  // Handle approve payment (admin only)
+  const handleApprovePayment = async (interactionId: string) => {
+    if (
+      !userData ||
+      (userData.userType !== 'admin' && userData.userType !== 'owner')
+    ) {
+      setSnackbar({
+        isOpen: true,
+        message: 'Unauthorized: Admin access required',
+        type: 'error',
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/interactions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interactionId,
+          approvePayment: true,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setSnackbar({
+          isOpen: true,
+          message: '✅ Payment approved successfully!',
+          type: 'success',
+        });
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        throw new Error(result.message || 'Failed to approve payment');
+      }
+    } catch (error) {
+      console.error('Error approving payment:', error);
+      setSnackbar({
+        isOpen: true,
+        message:
+          error instanceof Error ? error.message : 'Error approving payment',
+        type: 'error',
+      });
+    }
+  };
+
+  // Handle reject payment (admin only)
+  const handleRejectPayment = (interactionId: string) => {
+    if (
+      !userData ||
+      (userData.userType !== 'admin' && userData.userType !== 'owner')
+    ) {
+      setSnackbar({
+        isOpen: true,
+        message: 'Unauthorized: Admin access required',
+        type: 'error',
+      });
+      return;
+    }
+
+    setPaymentRejectionModal({ isOpen: true, interactionId });
+    setPaymentRejectionReason('');
+    setPaymentCustomReason('');
+  };
+
+  // Confirm payment rejection
+  const confirmPaymentRejection = async () => {
+    const interactionId = paymentRejectionModal.interactionId;
+    const finalReason =
+      paymentRejectionReason === 'Other'
+        ? paymentCustomReason
+        : paymentRejectionReason;
+
+    if (!finalReason) {
+      setSnackbar({
+        isOpen: true,
+        message: 'Please select a rejection reason',
+        type: 'warning',
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/interactions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interactionId,
+          rejectPayment: true,
+          rejectionReason: finalReason,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setPaymentRejectionModal({ isOpen: false, interactionId: '' });
+        setSnackbar({
+          isOpen: true,
+          message: '✅ Payment rejected. Buyer has been notified.',
+          type: 'success',
+        });
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        throw new Error(result.message || 'Failed to reject payment');
+      }
+    } catch (error) {
+      console.error('Error rejecting payment:', error);
+      setSnackbar({
+        isOpen: true,
+        message:
+          error instanceof Error ? error.message : 'Error rejecting payment',
+        type: 'error',
+      });
+    }
+  };
+
+  // Handle download contract PDF
+  const handleDownloadContract = async (interaction: Interaction) => {
+    try {
+      if (!interaction.contract) {
+        setSnackbar({
+          isOpen: true,
+          message: 'Contract not found',
+          type: 'error',
+        });
+        return;
+      }
+
+      // Call API to generate PDF
+      const response = await fetch('/api/generate-contract-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interactionId: interaction._id }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to generate contract PDF');
+      }
+
+      // Get the PDF blob
+      const blob = await response.blob();
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Contract_${interaction._id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      setSnackbar({
+        isOpen: true,
+        message: '✅ Contract PDF downloaded successfully!',
+        type: 'success',
+      });
+    } catch (error) {
+      console.error('Error downloading contract:', error);
+      setSnackbar({
+        isOpen: true,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to download contract PDF. Please try again.',
+        type: 'error',
+      });
+    }
+  };
+
   // Handle delete interaction
   const handleDeleteInteraction = async (interactionId: string) => {
     setDeleteModal({ isOpen: true, interactionId });
@@ -700,6 +1146,11 @@ Note: This is a legally binding electronic document. By signing this agreement, 
       rejected: { bg: '#ffebee', color: '#c62828', text: '❌ Rejected' },
       contract: { bg: '#fff9c4', color: '#f57f17', text: '📝 Contract' },
       payment: { bg: '#e1f5fe', color: '#01579b', text: '💳 Payment' },
+      'awaiting-delivery': {
+        bg: '#e0f2f1',
+        color: '#00695c',
+        text: '🚚 Awaiting Delivery',
+      },
       completed: { bg: '#e3f2fd', color: '#1565c0', text: '✔️ Completed' },
     };
     const style = styles[status as keyof typeof styles] || styles.pending;
@@ -1012,6 +1463,11 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                     { id: 'accepted', label: 'Accepted', icon: '✅' },
                     { id: 'contract', label: 'Contract', icon: '📝' },
                     { id: 'payment', label: 'Payment', icon: '💳' },
+                    {
+                      id: 'awaiting-delivery',
+                      label: 'Awaiting Delivery',
+                      icon: '🚚',
+                    },
                     { id: 'completed', label: 'Completed', icon: '✔️' },
                   ].map((subTab) => (
                     <button
@@ -1462,12 +1918,101 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                       </div>
                     )}
 
+                    {/* Buyer Response - Chat Style */}
+                    {interaction.buyerResponse && (
+                      <div
+                        style={{
+                          marginTop: '1rem',
+                          padding: '1.5rem',
+                          background:
+                            'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
+                          borderRadius: '12px 12px 12px 4px',
+                          border: '2px solid #90caf9',
+                          position: 'relative',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            marginBottom: '0.75rem',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '50%',
+                              background: '#1565c0',
+                              color: 'white',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '1rem',
+                              fontWeight: 'bold',
+                            }}
+                          >
+                            🛒
+                          </div>
+                          <div>
+                            <div
+                              style={{
+                                color: '#1565c0',
+                                fontSize: '0.85rem',
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              {interaction.buyer.fullName}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: '#666' }}>
+                              {interaction.respondedAt
+                                ? new Date(
+                                    interaction.respondedAt
+                                  ).toLocaleString()
+                                : new Date(
+                                    interaction.updatedAt
+                                  ).toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            paddingLeft: '2.5rem',
+                          }}
+                        >
+                          {interaction.buyerResponse
+                            .split('\n\n---\n\n')
+                            .map((msg, idx) => (
+                              <p
+                                key={idx}
+                                style={{
+                                  margin: idx > 0 ? '1rem 0 0 0' : 0,
+                                  fontSize: '0.9rem',
+                                  color: '#1a237e',
+                                  lineHeight: '1.5',
+                                  paddingTop: idx > 0 ? '1rem' : 0,
+                                  borderTop:
+                                    idx > 0 ? '1px dashed #64b5f6' : 'none',
+                                }}
+                              >
+                                {msg}
+                              </p>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Reply Input - Only for farmers and only before acceptance */}
                     {userId.startsWith('FID') &&
                       isOwner &&
-                      interaction.status !== 'accepted' &&
+                      !(
+                        interaction.farmerAccepted && interaction.buyerAccepted
+                      ) &&
                       interaction.status !== 'contract' &&
-                      interaction.status !== 'payment' && (
+                      interaction.status !== 'payment' &&
+                      interaction.status !== 'awaiting-delivery' &&
+                      interaction.status !== 'completed' && (
                         <div
                           style={{
                             marginTop: '1rem',
@@ -1525,6 +2070,96 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                   replyLoading[interaction._id]
                                     ? '#ccc'
                                     : '#388e3c',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '0.5rem 1.5rem',
+                                cursor:
+                                  !replyText[interaction._id] ||
+                                  !replyText[interaction._id].trim() ||
+                                  replyLoading[interaction._id]
+                                    ? 'not-allowed'
+                                    : 'pointer',
+                                fontSize: '0.9rem',
+                                fontWeight: 'bold',
+                                transition: 'all 0.3s ease',
+                              }}
+                            >
+                              {replyLoading[interaction._id]
+                                ? '⏳ Sending...'
+                                : '📤 Send Reply'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                    {/* Reply Input - Only for buyers and only before acceptance */}
+                    {userId.startsWith('BID') &&
+                      isOwner &&
+                      !(
+                        interaction.farmerAccepted && interaction.buyerAccepted
+                      ) &&
+                      interaction.status !== 'contract' &&
+                      interaction.status !== 'payment' &&
+                      interaction.status !== 'awaiting-delivery' &&
+                      interaction.status !== 'completed' && (
+                        <div
+                          style={{
+                            marginTop: '1rem',
+                            padding: '1rem',
+                            background: '#f5f5f5',
+                            borderRadius: '8px',
+                            border: '1px solid #e0e0e0',
+                          }}
+                        >
+                          <textarea
+                            placeholder='Type your reply to the farmer...'
+                            value={replyText[interaction._id] || ''}
+                            onChange={(e) =>
+                              setReplyText({
+                                ...replyText,
+                                [interaction._id]: e.target.value,
+                              })
+                            }
+                            style={{
+                              width: '100%',
+                              minHeight: '80px',
+                              padding: '0.75rem',
+                              border: '1px solid #c8e6c9',
+                              borderRadius: '8px',
+                              fontSize: '0.9rem',
+                              resize: 'vertical',
+                              fontFamily: 'Arial, sans-serif',
+                              marginBottom: '0.5rem',
+                              color: '#1a1a1a',
+                            }}
+                          />
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'flex-end',
+                              gap: '0.5rem',
+                            }}
+                          >
+                            <button
+                              onClick={() =>
+                                handleBuyerReplySubmit(
+                                  interaction._id,
+                                  interaction.buyerResponse || ''
+                                )
+                              }
+                              disabled={
+                                !replyText[interaction._id] ||
+                                !replyText[interaction._id].trim() ||
+                                replyLoading[interaction._id]
+                              }
+                              style={{
+                                background:
+                                  !replyText[interaction._id] ||
+                                  !replyText[interaction._id].trim() ||
+                                  replyLoading[interaction._id]
+                                    ? '#ccc'
+                                    : '#1565c0',
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '8px',
@@ -1795,6 +2430,7 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                         interaction.status !== 'completed' &&
                         interaction.status !== 'contract' &&
                         interaction.status !== 'payment' &&
+                        interaction.status !== 'awaiting-delivery' &&
                         isOwner && (
                           <div
                             style={{
@@ -1853,167 +2489,195 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                           </div>
                         )}
 
-                      {/* Contract Phase - Preview and Sign Buttons */}
-                      {(interaction.status === 'contract' ||
-                        interaction.status === 'payment') &&
-                        isOwner && (
+                      {/* Contract Phase - Preview and Sign Buttons (Always visible once contract exists) */}
+                      {interaction.contract && isOwner && (
+                        <div
+                          style={{
+                            marginTop: '1rem',
+                            padding: '1.5rem',
+                            background:
+                              'linear-gradient(135deg, #fff9c4 0%, #fff59d 100%)',
+                            borderRadius: '12px',
+                            border: '2px solid #f57f17',
+                          }}
+                        >
                           <div
                             style={{
-                              marginTop: '1rem',
-                              padding: '1.5rem',
-                              background:
-                                'linear-gradient(135deg, #fff9c4 0%, #fff59d 100%)',
-                              borderRadius: '12px',
-                              border: '2px solid #f57f17',
+                              textAlign: 'center',
+                              marginBottom: '1rem',
+                            }}
+                          >
+                            <h4
+                              style={{
+                                color: '#f57f17',
+                                margin: '0 0 0.5rem 0',
+                                fontSize: '1.1rem',
+                              }}
+                            >
+                              📋 Legal Contract Generated
+                            </h4>
+                            <p
+                              style={{
+                                margin: 0,
+                                color: '#6d4c41',
+                                fontSize: '0.9rem',
+                              }}
+                            >
+                              Review and sign the contract to proceed to payment
+                            </p>
+                          </div>
+
+                          {/* Contract Signature Status */}
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 1fr',
+                              gap: '1rem',
+                              marginBottom: '1rem',
                             }}
                           >
                             <div
                               style={{
+                                padding: '1rem',
+                                background: interaction.contract
+                                  ?.farmerSignature
+                                  ? '#e8f5e9'
+                                  : 'white',
+                                borderRadius: '8px',
+                                border: `2px solid ${
+                                  interaction.contract?.farmerSignature
+                                    ? '#4caf50'
+                                    : '#e0e0e0'
+                                }`,
                                 textAlign: 'center',
-                                marginBottom: '1rem',
                               }}
                             >
-                              <h4
-                                style={{
-                                  color: '#f57f17',
-                                  margin: '0 0 0.5rem 0',
-                                  fontSize: '1.1rem',
-                                }}
-                              >
-                                📋 Legal Contract Generated
-                              </h4>
-                              <p
-                                style={{
-                                  margin: 0,
-                                  color: '#6d4c41',
-                                  fontSize: '0.9rem',
-                                }}
-                              >
-                                Review and sign the contract to proceed to
-                                payment
-                              </p>
-                            </div>
-
-                            {/* Contract Signature Status */}
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 1fr',
-                                gap: '1rem',
-                                marginBottom: '1rem',
-                              }}
-                            >
+                              <div style={{ fontSize: '2rem' }}>
+                                {interaction.contract?.farmerSignature
+                                  ? '✅'
+                                  : '⏳'}
+                              </div>
                               <div
                                 style={{
-                                  padding: '1rem',
-                                  background: interaction.contract
-                                    ?.farmerSignature
-                                    ? '#e8f5e9'
-                                    : 'white',
-                                  borderRadius: '8px',
-                                  border: `2px solid ${
-                                    interaction.contract?.farmerSignature
-                                      ? '#4caf50'
-                                      : '#e0e0e0'
-                                  }`,
-                                  textAlign: 'center',
+                                  fontSize: '0.85rem',
+                                  fontWeight: 'bold',
+                                  color: interaction.contract?.farmerSignature
+                                    ? '#2e7d32'
+                                    : '#757575',
+                                  marginTop: '0.5rem',
                                 }}
                               >
-                                <div style={{ fontSize: '2rem' }}>
-                                  {interaction.contract?.farmerSignature
-                                    ? '✅'
-                                    : '⏳'}
-                                </div>
+                                Farmer Signature
+                              </div>
+                              {interaction.contract?.farmerSignature && (
                                 <div
                                   style={{
-                                    fontSize: '0.85rem',
-                                    fontWeight: 'bold',
-                                    color: interaction.contract?.farmerSignature
-                                      ? '#2e7d32'
-                                      : '#757575',
-                                    marginTop: '0.5rem',
+                                    fontSize: '0.75rem',
+                                    color: '#666',
+                                    marginTop: '0.25rem',
                                   }}
                                 >
-                                  Farmer Signature
+                                  Signed by:{' '}
+                                  {interaction.contract.farmerSignature}
                                 </div>
-                                {interaction.contract?.farmerSignature && (
-                                  <div
-                                    style={{
-                                      fontSize: '0.75rem',
-                                      color: '#666',
-                                      marginTop: '0.25rem',
-                                    }}
-                                  >
-                                    Signed by:{' '}
-                                    {interaction.contract.farmerSignature}
-                                  </div>
-                                )}
-                              </div>
-
-                              <div
-                                style={{
-                                  padding: '1rem',
-                                  background: interaction.contract
-                                    ?.buyerSignature
-                                    ? '#e8f5e9'
-                                    : 'white',
-                                  borderRadius: '8px',
-                                  border: `2px solid ${
-                                    interaction.contract?.buyerSignature
-                                      ? '#4caf50'
-                                      : '#e0e0e0'
-                                  }`,
-                                  textAlign: 'center',
-                                }}
-                              >
-                                <div style={{ fontSize: '2rem' }}>
-                                  {interaction.contract?.buyerSignature
-                                    ? '✅'
-                                    : '⏳'}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '0.85rem',
-                                    fontWeight: 'bold',
-                                    color: interaction.contract?.buyerSignature
-                                      ? '#2e7d32'
-                                      : '#757575',
-                                    marginTop: '0.5rem',
-                                  }}
-                                >
-                                  Buyer Signature
-                                </div>
-                                {interaction.contract?.buyerSignature && (
-                                  <div
-                                    style={{
-                                      fontSize: '0.75rem',
-                                      color: '#666',
-                                      marginTop: '0.25rem',
-                                    }}
-                                  >
-                                    Signed by:{' '}
-                                    {interaction.contract.buyerSignature}
-                                  </div>
-                                )}
-                              </div>
+                              )}
                             </div>
 
-                            {/* Action Buttons */}
                             <div
                               style={{
-                                display: 'flex',
-                                gap: '0.75rem',
-                                flexWrap: 'wrap',
+                                padding: '1rem',
+                                background: interaction.contract?.buyerSignature
+                                  ? '#e8f5e9'
+                                  : 'white',
+                                borderRadius: '8px',
+                                border: `2px solid ${
+                                  interaction.contract?.buyerSignature
+                                    ? '#4caf50'
+                                    : '#e0e0e0'
+                                }`,
+                                textAlign: 'center',
                               }}
                             >
+                              <div style={{ fontSize: '2rem' }}>
+                                {interaction.contract?.buyerSignature
+                                  ? '✅'
+                                  : '⏳'}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '0.85rem',
+                                  fontWeight: 'bold',
+                                  color: interaction.contract?.buyerSignature
+                                    ? '#2e7d32'
+                                    : '#757575',
+                                  marginTop: '0.5rem',
+                                }}
+                              >
+                                Buyer Signature
+                              </div>
+                              {interaction.contract?.buyerSignature && (
+                                <div
+                                  style={{
+                                    fontSize: '0.75rem',
+                                    color: '#666',
+                                    marginTop: '0.25rem',
+                                  }}
+                                >
+                                  Signed by:{' '}
+                                  {interaction.contract.buyerSignature}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              gap: '0.75rem',
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <button
+                              onClick={() => handlePreviewContract(interaction)}
+                              style={{
+                                flex: 1,
+                                minWidth: '180px',
+                                background: '#2196f3',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '1rem',
+                                cursor: 'pointer',
+                                fontSize: '0.95rem',
+                                fontWeight: 'bold',
+                                transition: 'all 0.3s ease',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#1976d2';
+                                e.currentTarget.style.transform =
+                                  'translateY(-2px)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = '#2196f3';
+                                e.currentTarget.style.transform =
+                                  'translateY(0)';
+                              }}
+                            >
+                              👁️ Preview Contract
+                            </button>
+
+                            {/* Sign Button - Only show if current user hasn't signed */}
+                            {((userId.startsWith('FID') &&
+                              !interaction.contract?.farmerSignature) ||
+                              (userId.startsWith('BID') &&
+                                !interaction.contract?.buyerSignature)) && (
                               <button
-                                onClick={() =>
-                                  handlePreviewContract(interaction)
-                                }
+                                onClick={() => handleSignContract(interaction)}
                                 style={{
                                   flex: 1,
                                   minWidth: '180px',
-                                  background: '#2196f3',
+                                  background: '#4caf50',
                                   color: 'white',
                                   border: 'none',
                                   borderRadius: '8px',
@@ -2022,111 +2686,1819 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                                   fontSize: '0.95rem',
                                   fontWeight: 'bold',
                                   transition: 'all 0.3s ease',
+                                  boxShadow:
+                                    '0 4px 12px rgba(76, 175, 80, 0.3)',
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = '#1976d2';
+                                  e.currentTarget.style.background = '#388e3c';
                                   e.currentTarget.style.transform =
                                     'translateY(-2px)';
+                                  e.currentTarget.style.boxShadow =
+                                    '0 6px 16px rgba(76, 175, 80, 0.4)';
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = '#2196f3';
+                                  e.currentTarget.style.background = '#4caf50';
                                   e.currentTarget.style.transform =
                                     'translateY(0)';
+                                  e.currentTarget.style.boxShadow =
+                                    '0 4px 12px rgba(76, 175, 80, 0.3)';
                                 }}
                               >
-                                👁️ Preview Contract
+                                ✍️ Sign Contract
                               </button>
+                            )}
+                          </div>
 
-                              {/* Sign Button - Only show if current user hasn't signed */}
-                              {((userId.startsWith('FID') &&
-                                !interaction.contract?.farmerSignature) ||
-                                (userId.startsWith('BID') &&
-                                  !interaction.contract?.buyerSignature)) && (
-                                <button
-                                  onClick={() =>
-                                    handleSignContract(interaction)
-                                  }
-                                  style={{
-                                    flex: 1,
-                                    minWidth: '180px',
-                                    background: '#4caf50',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    padding: '1rem',
-                                    cursor: 'pointer',
-                                    fontSize: '0.95rem',
-                                    fontWeight: 'bold',
-                                    transition: 'all 0.3s ease',
-                                    boxShadow:
-                                      '0 4px 12px rgba(76, 175, 80, 0.3)',
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.background =
-                                      '#388e3c';
-                                    e.currentTarget.style.transform =
-                                      'translateY(-2px)';
-                                    e.currentTarget.style.boxShadow =
-                                      '0 6px 16px rgba(76, 175, 80, 0.4)';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.background =
-                                      '#4caf50';
-                                    e.currentTarget.style.transform =
-                                      'translateY(0)';
-                                    e.currentTarget.style.boxShadow =
-                                      '0 4px 12px rgba(76, 175, 80, 0.3)';
-                                  }}
-                                >
-                                  ✍️ Sign Contract
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Both Signed - Ready for Payment */}
-                            {interaction.contract?.farmerSignature &&
-                              interaction.contract?.buyerSignature && (
+                          {/* Both Signed - Ready for Payment */}
+                          {interaction.contract?.farmerSignature &&
+                            interaction.contract?.buyerSignature && (
+                              <div
+                                style={{
+                                  marginTop: '1rem',
+                                  padding: '1rem',
+                                  background: '#e8f5e9',
+                                  borderRadius: '8px',
+                                  border: '2px solid #4caf50',
+                                  textAlign: 'center',
+                                }}
+                              >
                                 <div
                                   style={{
-                                    marginTop: '1rem',
+                                    fontSize: '1.5rem',
+                                    marginBottom: '0.5rem',
+                                  }}
+                                >
+                                  🎉
+                                </div>
+                                <div
+                                  style={{
+                                    color: '#2e7d32',
+                                    fontWeight: 'bold',
+                                    fontSize: '1rem',
+                                    marginBottom: '0.25rem',
+                                  }}
+                                >
+                                  Contract Fully Signed!
+                                </div>
+                                <div
+                                  style={{
+                                    color: '#6d4c41',
+                                    fontSize: '0.85rem',
+                                  }}
+                                >
+                                  Status has been updated to Payment. Proceed
+                                  with payment processing.
+                                </div>
+                              </div>
+                            )}
+
+                          {/* Payment Section - Show for buyers when status is payment OR when payment exists */}
+                          {(interaction.status === 'payment' ||
+                            interaction.status === 'awaiting-delivery' ||
+                            interaction.status === 'completed' ||
+                            interaction.payment) &&
+                            userId.startsWith('BID') &&
+                            isOwner && (
+                              <div
+                                style={{
+                                  marginTop: '1rem',
+                                  padding: '1.5rem',
+                                  background:
+                                    'linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%)',
+                                  borderRadius: '12px',
+                                  border: '2px solid #0277bd',
+                                }}
+                              >
+                                <h4
+                                  style={{
+                                    color: '#01579b',
+                                    margin: '0 0 1rem 0',
+                                    fontSize: '1.1rem',
+                                    textAlign: 'center',
+                                  }}
+                                >
+                                  💳 10% Advance Payment Processing
+                                </h4>
+
+                                {!interaction.payment?.screenshotUrl ||
+                                interaction.payment?.verificationStatus ===
+                                  'rejected' ? (
+                                  <>
+                                    {/* Bank Details Section */}
+                                    <div
+                                      style={{
+                                        background: 'white',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        marginBottom: '1rem',
+                                        border: '1px solid #0277bd',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontWeight: 'bold',
+                                          color: '#01579b',
+                                          marginBottom: '0.75rem',
+                                          fontSize: '0.95rem',
+                                        }}
+                                      >
+                                        🏦 Bank Transfer Details
+                                      </div>
+                                      <div
+                                        style={{
+                                          display: 'grid',
+                                          gap: '0.5rem',
+                                          fontSize: '0.9rem',
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '140px 1fr',
+                                            gap: '0.5rem',
+                                          }}
+                                        >
+                                          <span style={{ color: '#666' }}>
+                                            Bank Name:
+                                          </span>
+                                          <span style={{ fontWeight: 'bold' }}>
+                                            State Bank of India
+                                          </span>
+                                        </div>
+                                        <div
+                                          style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '140px 1fr',
+                                            gap: '0.5rem',
+                                          }}
+                                        >
+                                          <span style={{ color: '#666' }}>
+                                            Account Name:
+                                          </span>
+                                          <span style={{ fontWeight: 'bold' }}>
+                                            Farmers Direct Pvt Ltd
+                                          </span>
+                                        </div>
+                                        <div
+                                          style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '140px 1fr',
+                                            gap: '0.5rem',
+                                          }}
+                                        >
+                                          <span style={{ color: '#666' }}>
+                                            Account Number:
+                                          </span>
+                                          <span
+                                            style={{
+                                              fontWeight: 'bold',
+                                              fontFamily: 'monospace',
+                                            }}
+                                          >
+                                            1234567890123456
+                                          </span>
+                                        </div>
+                                        <div
+                                          style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '140px 1fr',
+                                            gap: '0.5rem',
+                                          }}
+                                        >
+                                          <span style={{ color: '#666' }}>
+                                            IFSC Code:
+                                          </span>
+                                          <span
+                                            style={{
+                                              fontWeight: 'bold',
+                                              fontFamily: 'monospace',
+                                            }}
+                                          >
+                                            SBIN0001234
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Payment Amount Section */}
+                                    <div
+                                      style={{
+                                        background: '#fff9c4',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        marginBottom: '1rem',
+                                        border: '2px solid #f57f17',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: '1fr 1fr',
+                                          gap: '1rem',
+                                          marginBottom: '0.75rem',
+                                        }}
+                                      >
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Total Contract Value
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '1.2rem',
+                                              fontWeight: 'bold',
+                                              color: '#f57f17',
+                                            }}
+                                          >
+                                            ₹
+                                            {interaction.product.pricePerUnit.toFixed(
+                                              2
+                                            )}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Advance Payment (10%)
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '1.2rem',
+                                              fontWeight: 'bold',
+                                              color: '#d84315',
+                                            }}
+                                          >
+                                            ₹
+                                            {(
+                                              interaction.product.pricePerUnit *
+                                              0.1
+                                            ).toFixed(2)}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '0.8rem',
+                                          color: '#6d4c41',
+                                          fontStyle: 'italic',
+                                        }}
+                                      >
+                                        💡 Remaining 90% (₹
+                                        {(
+                                          interaction.product.pricePerUnit * 0.9
+                                        ).toFixed(2)}
+                                        ) will be paid before delivery
+                                      </div>
+                                    </div>
+
+                                    {/* Transaction Reference */}
+                                    <div
+                                      style={{
+                                        background: '#e8f5e9',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        marginBottom: '1rem',
+                                        border: '1px solid #4caf50',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '0.85rem',
+                                          color: '#2e7d32',
+                                          marginBottom: '0.5rem',
+                                          fontWeight: 'bold',
+                                        }}
+                                      >
+                                        📋 Transaction Reference Number
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '1.1rem',
+                                          fontWeight: 'bold',
+                                          fontFamily: 'monospace',
+                                          color: '#1b5e20',
+                                          letterSpacing: '2px',
+                                          background: 'white',
+                                          padding: '0.5rem',
+                                          borderRadius: '4px',
+                                          textAlign: 'center',
+                                        }}
+                                      >
+                                        TXN
+                                        {interaction._id
+                                          .substring(
+                                            interaction._id.length - 12
+                                          )
+                                          .toUpperCase()}
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '0.75rem',
+                                          color: '#6d4c41',
+                                          marginTop: '0.5rem',
+                                          fontStyle: 'italic',
+                                        }}
+                                      >
+                                        ⚠️ Use this reference number in payment
+                                        remarks/description
+                                      </div>
+                                    </div>
+
+                                    {/* Upload Payment Screenshot */}
+                                    <div
+                                      style={{
+                                        background: 'white',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        border: '1px solid #0277bd',
+                                      }}
+                                    >
+                                      <label
+                                        style={{
+                                          fontSize: '0.9rem',
+                                          fontWeight: 'bold',
+                                          color: '#01579b',
+                                          marginBottom: '0.5rem',
+                                          display: 'block',
+                                        }}
+                                      >
+                                        📸 Upload Payment Screenshot
+                                      </label>
+                                      <input
+                                        type='file'
+                                        accept='image/*'
+                                        onChange={(e) =>
+                                          handlePaymentScreenshotChange(
+                                            interaction._id,
+                                            e.target.files?.[0] || null
+                                          )
+                                        }
+                                        style={{
+                                          width: '100%',
+                                          padding: '0.5rem',
+                                          border: '2px dashed #0277bd',
+                                          borderRadius: '8px',
+                                          cursor: 'pointer',
+                                          fontSize: '0.85rem',
+                                          background: '#f5f5f5',
+                                        }}
+                                      />
+                                      {paymentScreenshotPreview[
+                                        interaction._id
+                                      ] && (
+                                        <div
+                                          style={{
+                                            marginTop: '1rem',
+                                            textAlign: 'center',
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              fontSize: '0.85rem',
+                                              color: '#01579b',
+                                              marginBottom: '0.5rem',
+                                              fontWeight: 'bold',
+                                            }}
+                                          >
+                                            Preview:
+                                          </div>
+                                          <img
+                                            src={
+                                              paymentScreenshotPreview[
+                                                interaction._id
+                                              ]
+                                            }
+                                            alt='Payment Screenshot Preview'
+                                            style={{
+                                              maxWidth: '100%',
+                                              maxHeight: '300px',
+                                              borderRadius: '8px',
+                                              border: '2px solid #0277bd',
+                                            }}
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Submit Button */}
+                                    <button
+                                      onClick={() =>
+                                        handlePaymentSubmit(interaction._id)
+                                      }
+                                      disabled={
+                                        !paymentScreenshot[interaction._id] ||
+                                        paymentUploading[interaction._id]
+                                      }
+                                      style={{
+                                        width: '100%',
+                                        marginTop: '1rem',
+                                        background:
+                                          !paymentScreenshot[interaction._id] ||
+                                          paymentUploading[interaction._id]
+                                            ? '#ccc'
+                                            : '#0277bd',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        padding: '1rem',
+                                        cursor:
+                                          !paymentScreenshot[interaction._id] ||
+                                          paymentUploading[interaction._id]
+                                            ? 'not-allowed'
+                                            : 'pointer',
+                                        fontSize: '1rem',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.3s ease',
+                                      }}
+                                    >
+                                      {paymentUploading[interaction._id]
+                                        ? '⏳ Uploading...'
+                                        : '✅ Submit Payment Confirmation'}
+                                    </button>
+                                  </>
+                                ) : interaction.payment?.verificationStatus ===
+                                  'pending' ? (
+                                  /* Payment Verification Pending */
+                                  <div
+                                    style={{
+                                      background: '#fff3e0',
+                                      padding: '1.5rem',
+                                      borderRadius: '8px',
+                                      border: '2px solid #ff9800',
+                                      textAlign: 'center',
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        fontSize: '2rem',
+                                        marginBottom: '0.75rem',
+                                      }}
+                                    >
+                                      ⏳
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: '1.1rem',
+                                        fontWeight: 'bold',
+                                        color: '#e65100',
+                                        marginBottom: '0.5rem',
+                                      }}
+                                    >
+                                      10% Advance Payment Verification Pending
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: '0.85rem',
+                                        color: '#6d4c41',
+                                        marginBottom: '1rem',
+                                      }}
+                                    >
+                                      Your 10% advance payment screenshot has
+                                      been submitted and is under review by our
+                                      team. You will be notified once verified.
+                                    </div>
+                                    {interaction.payment?.screenshotUrl && (
+                                      <div
+                                        style={{
+                                          marginTop: '1rem',
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            fontSize: '0.85rem',
+                                            color: '#01579b',
+                                            marginBottom: '0.5rem',
+                                            fontWeight: 'bold',
+                                          }}
+                                        >
+                                          Submitted Screenshot:
+                                        </div>
+                                        <img
+                                          src={
+                                            interaction.payment.screenshotUrl
+                                          }
+                                          alt='Submitted Payment Screenshot'
+                                          style={{
+                                            maxWidth: '100%',
+                                            maxHeight: '300px',
+                                            borderRadius: '8px',
+                                            border: '2px solid #0277bd',
+                                          }}
+                                        />
+                                      </div>
+                                    )}
+
+                                    {/* Admin Approve/Reject Buttons */}
+                                    {userData &&
+                                      (userData.userType === 'admin' ||
+                                        userData.userType === 'owner') && (
+                                        <div
+                                          style={{
+                                            marginTop: '1rem',
+                                            display: 'flex',
+                                            gap: '1rem',
+                                            justifyContent: 'center',
+                                          }}
+                                        >
+                                          <button
+                                            onClick={() =>
+                                              handleApprovePayment(
+                                                interaction._id
+                                              )
+                                            }
+                                            style={{
+                                              flex: 1,
+                                              background: '#4caf50',
+                                              color: 'white',
+                                              border: 'none',
+                                              borderRadius: '8px',
+                                              padding: '1rem',
+                                              cursor: 'pointer',
+                                              fontSize: '1rem',
+                                              fontWeight: 'bold',
+                                              transition: 'all 0.3s ease',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                              e.currentTarget.style.background =
+                                                '#388e3c';
+                                              e.currentTarget.style.transform =
+                                                'translateY(-2px)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                              e.currentTarget.style.background =
+                                                '#4caf50';
+                                              e.currentTarget.style.transform =
+                                                'translateY(0)';
+                                            }}
+                                          >
+                                            ✅ Approve 10% Advance Payment
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              handleRejectPayment(
+                                                interaction._id
+                                              )
+                                            }
+                                            style={{
+                                              flex: 1,
+                                              background: '#f44336',
+                                              color: 'white',
+                                              border: 'none',
+                                              borderRadius: '8px',
+                                              padding: '1rem',
+                                              cursor: 'pointer',
+                                              fontSize: '1rem',
+                                              fontWeight: 'bold',
+                                              transition: 'all 0.3s ease',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                              e.currentTarget.style.background =
+                                                '#d32f2f';
+                                              e.currentTarget.style.transform =
+                                                'translateY(-2px)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                              e.currentTarget.style.background =
+                                                '#f44336';
+                                              e.currentTarget.style.transform =
+                                                'translateY(0)';
+                                            }}
+                                          >
+                                            ❌ Reject 10% Advance Payment
+                                          </button>
+                                        </div>
+                                      )}
+                                  </div>
+                                ) : interaction.payment?.verificationStatus ===
+                                  'verified' ? (
+                                  /* Payment Verified */
+                                  <div
+                                    style={{
+                                      background: '#e8f5e9',
+                                      padding: '1.5rem',
+                                      borderRadius: '8px',
+                                      border: '2px solid #4caf50',
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        textAlign: 'center',
+                                        marginBottom: '1rem',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '2rem',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        ✅
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '1.1rem',
+                                          fontWeight: 'bold',
+                                          color: '#2e7d32',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        10% Advance Payment Verified & Approved!
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '0.85rem',
+                                          color: '#6d4c41',
+                                        }}
+                                      >
+                                        Your 10% advance payment has been
+                                        verified by our team
+                                      </div>
+                                    </div>
+
+                                    {/* Payment Details */}
+                                    <div
+                                      style={{
+                                        background: '#fff',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        marginBottom: '1rem',
+                                        border: '1px solid #4caf50',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: '1fr 1fr',
+                                          gap: '1rem',
+                                          marginBottom: '1rem',
+                                        }}
+                                      >
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            10% Advance Amount Paid
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '1.2rem',
+                                              fontWeight: 'bold',
+                                              color: '#2e7d32',
+                                            }}
+                                          >
+                                            ₹
+                                            {interaction.payment.advanceAmount?.toFixed(
+                                              2
+                                            ) ||
+                                              (
+                                                interaction.product
+                                                  .pricePerUnit * 0.1
+                                              ).toFixed(2)}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Verified On
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.9rem',
+                                              fontWeight: 'bold',
+                                              color: '#2e7d32',
+                                            }}
+                                          >
+                                            {interaction.payment.verifiedAt
+                                              ? new Date(
+                                                  interaction.payment.verifiedAt
+                                                ).toLocaleDateString()
+                                              : 'N/A'}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: '1fr 1fr',
+                                          gap: '1rem',
+                                        }}
+                                      >
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Submitted On
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.85rem',
+                                              color: '#666',
+                                            }}
+                                          >
+                                            {new Date(
+                                              interaction.payment.submittedAt ||
+                                                ''
+                                            ).toLocaleDateString()}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Transaction ID
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              fontFamily: 'monospace',
+                                              color: '#01579b',
+                                              background: '#e3f2fd',
+                                              padding: '0.25rem 0.5rem',
+                                              borderRadius: '4px',
+                                            }}
+                                          >
+                                            {interaction.payment.transactionId}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Payment Screenshot */}
+                                    <div
+                                      style={{
+                                        marginBottom: '1rem',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '0.9rem',
+                                          color: '#01579b',
+                                          marginBottom: '0.5rem',
+                                          fontWeight: 'bold',
+                                          textAlign: 'center',
+                                        }}
+                                      >
+                                        📷 Payment Screenshot:
+                                      </div>
+                                      <img
+                                        src={interaction.payment.screenshotUrl}
+                                        alt='Payment Screenshot'
+                                        style={{
+                                          width: '100%',
+                                          maxHeight: '350px',
+                                          objectFit: 'contain',
+                                          borderRadius: '8px',
+                                          border: '1px solid #4caf50',
+                                          cursor: 'pointer',
+                                        }}
+                                        onClick={() =>
+                                          interaction.payment?.screenshotUrl &&
+                                          window.open(
+                                            interaction.payment.screenshotUrl,
+                                            '_blank'
+                                          )
+                                        }
+                                      />
+                                    </div>
+
+                                    {/* Confirmation Message */}
+                                    <div
+                                      style={{
+                                        textAlign: 'center',
+                                        padding: '1rem',
+                                        background: '#c8e6c9',
+                                        borderRadius: '8px',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '0.9rem',
+                                          color: '#1b5e20',
+                                          fontWeight: 'bold',
+                                        }}
+                                      >
+                                        💰 10% Advance payment confirmed! The
+                                        farmer has been notified.
+                                      </div>
+                                    </div>
+
+                                    {/* Download Contract PDF Section */}
+                                    <div
+                                      style={{
+                                        marginTop: '1.5rem',
+                                        padding: '1.5rem',
+                                        background:
+                                          'linear-gradient(135deg, #fff9c4 0%, #fff59d 100%)',
+                                        border: '2px solid #f57f17',
+                                        borderRadius: '12px',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          textAlign: 'center',
+                                          marginBottom: '1rem',
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            fontSize: '2rem',
+                                            marginBottom: '0.5rem',
+                                          }}
+                                        >
+                                          📝
+                                        </div>
+                                        <h4
+                                          style={{
+                                            color: '#f57f17',
+                                            margin: '0 0 0.5rem 0',
+                                          }}
+                                        >
+                                          Official Contract Agreement
+                                        </h4>
+                                        <p
+                                          style={{
+                                            margin: 0,
+                                            fontSize: '0.85rem',
+                                            color: '#6d4c41',
+                                          }}
+                                        >
+                                          Your signed contract has been sent to
+                                          your email
+                                        </p>
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          background: 'white',
+                                          padding: '1rem',
+                                          borderRadius: '8px',
+                                          border: '1px solid #f57f17',
+                                          marginBottom: '1rem',
+                                        }}
+                                      >
+                                        <p
+                                          style={{
+                                            margin: '0 0 0.5rem 0',
+                                            fontSize: '0.85rem',
+                                            color: '#6d4c41',
+                                          }}
+                                        >
+                                          📧{' '}
+                                          <strong>Contract PDF sent to:</strong>
+                                        </p>
+                                        <p
+                                          style={{
+                                            margin: 0,
+                                            fontSize: '0.9rem',
+                                            color: '#1565c0',
+                                            fontWeight: 'bold',
+                                          }}
+                                        >
+                                          {interaction.buyer.email}
+                                        </p>
+                                      </div>
+
+                                      <button
+                                        onClick={() =>
+                                          handleDownloadContract(interaction)
+                                        }
+                                        style={{
+                                          width: '100%',
+                                          background: '#f57f17',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '8px',
+                                          padding: '1rem',
+                                          cursor: 'pointer',
+                                          fontSize: '1rem',
+                                          fontWeight: 'bold',
+                                          transition: 'all 0.3s ease',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          gap: '0.5rem',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            '#e65100';
+                                          e.currentTarget.style.transform =
+                                            'translateY(-2px)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            '#f57f17';
+                                          e.currentTarget.style.transform =
+                                            'translateY(0)';
+                                        }}
+                                      >
+                                        <span style={{ fontSize: '1.2rem' }}>
+                                          📥
+                                        </span>
+                                        Download Contract PDF
+                                      </button>
+
+                                      <p
+                                        style={{
+                                          margin: '1rem 0 0 0',
+                                          fontSize: '0.75rem',
+                                          color: '#6d4c41',
+                                          textAlign: 'center',
+                                        }}
+                                      >
+                                        📌 This contract includes company
+                                        authorization, witness signatures, and
+                                        official seal
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            )}
+
+                          {/* Payment Section - Show Rejection Reason if Rejected */}
+                          {interaction.status === 'payment' &&
+                            userId.startsWith('BID') &&
+                            isOwner &&
+                            interaction.payment?.verificationStatus ===
+                              'rejected' && (
+                              <div
+                                style={{
+                                  marginTop: '1rem',
+                                  padding: '1.5rem',
+                                  background: '#ffebee',
+                                  borderRadius: '12px',
+                                  border: '2px solid #d32f2f',
+                                }}
+                              >
+                                <h4
+                                  style={{
+                                    color: '#c62828',
+                                    margin: '0 0 1rem 0',
+                                    fontSize: '1.1rem',
+                                    textAlign: 'center',
+                                  }}
+                                >
+                                  ❌ 10% Advance Payment Rejected
+                                </h4>
+
+                                <div
+                                  style={{
+                                    background: 'white',
                                     padding: '1rem',
-                                    background: '#e8f5e9',
                                     borderRadius: '8px',
-                                    border: '2px solid #4caf50',
+                                    marginBottom: '1rem',
+                                    border: '1px solid #ef5350',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontWeight: 'bold',
+                                      color: '#d32f2f',
+                                      marginBottom: '0.5rem',
+                                    }}
+                                  >
+                                    ⚠️ Rejection Reason:
+                                  </div>
+                                  <div
+                                    style={{
+                                      color: '#6d4c41',
+                                      fontSize: '0.95rem',
+                                      lineHeight: '1.5',
+                                    }}
+                                  >
+                                    {interaction.payment.rejectionReason}
+                                  </div>
+                                  {interaction.payment.rejectedAt && (
+                                    <div
+                                      style={{
+                                        marginTop: '0.5rem',
+                                        fontSize: '0.85rem',
+                                        color: '#999',
+                                      }}
+                                    >
+                                      Rejected on:{' '}
+                                      {new Date(
+                                        interaction.payment.rejectedAt
+                                      ).toLocaleString()}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div
+                                  style={{
+                                    background: '#fff9c4',
+                                    padding: '1rem',
+                                    borderRadius: '8px',
+                                    marginBottom: '1rem',
+                                    border: '1px solid #f57f17',
                                     textAlign: 'center',
                                   }}
                                 >
                                   <div
                                     style={{
-                                      fontSize: '1.5rem',
+                                      fontWeight: 'bold',
+                                      color: '#f57f17',
                                       marginBottom: '0.5rem',
                                     }}
                                   >
-                                    🎉
+                                    💡 Please retry your payment
                                   </div>
                                   <div
                                     style={{
-                                      color: '#2e7d32',
-                                      fontWeight: 'bold',
-                                      fontSize: '1rem',
-                                      marginBottom: '0.25rem',
-                                    }}
-                                  >
-                                    Contract Fully Signed!
-                                  </div>
-                                  <div
-                                    style={{
-                                      color: '#6d4c41',
                                       fontSize: '0.85rem',
+                                      color: '#6d4c41',
                                     }}
                                   >
-                                    Status has been updated to Payment. Proceed
-                                    with payment processing.
+                                    Make sure to upload a clear screenshot with
+                                    correct transaction details. The payment
+                                    section below is now available for
+                                    resubmission.
                                   </div>
                                 </div>
-                              )}
-                          </div>
-                        )}
+                              </div>
+                            )}
+
+                          {/* Payment Section - Show for farmers when status is payment OR when payment exists */}
+                          {(interaction.status === 'payment' ||
+                            interaction.status === 'awaiting-delivery' ||
+                            interaction.status === 'completed' ||
+                            interaction.payment) &&
+                            userId.startsWith('FID') &&
+                            isOwner && (
+                              <div
+                                style={{
+                                  marginTop: '1rem',
+                                  padding: '1.5rem',
+                                  background:
+                                    'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
+                                  borderRadius: '12px',
+                                  border: '2px solid #ff9800',
+                                }}
+                              >
+                                <h4
+                                  style={{
+                                    color: '#e65100',
+                                    margin: '0 0 1rem 0',
+                                    fontSize: '1.1rem',
+                                    textAlign: 'center',
+                                  }}
+                                >
+                                  💰 10% Advance Payment Under Process
+                                </h4>
+
+                                {!interaction.payment?.screenshotUrl ? (
+                                  /* Waiting for buyer to submit payment */
+                                  <div
+                                    style={{
+                                      background: 'white',
+                                      padding: '1.5rem',
+                                      borderRadius: '8px',
+                                      border: '2px solid #ff9800',
+                                      textAlign: 'center',
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        fontSize: '2rem',
+                                        marginBottom: '0.75rem',
+                                      }}
+                                    >
+                                      ⏳
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: '1.1rem',
+                                        fontWeight: 'bold',
+                                        color: '#e65100',
+                                        marginBottom: '0.5rem',
+                                      }}
+                                    >
+                                      Waiting for Buyer's 10% Advance Payment
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: '0.85rem',
+                                        color: '#6d4c41',
+                                        marginBottom: '1rem',
+                                      }}
+                                    >
+                                      The buyer has been notified to submit the
+                                      10% advance payment. You will be notified
+                                      once the payment is submitted and
+                                      verified.
+                                    </div>
+                                    <div
+                                      style={{
+                                        background: '#fff9c4',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        border: '1px solid #f57f17',
+                                        marginTop: '1rem',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '0.85rem',
+                                          color: '#6d4c41',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        Expected Advance Payment (10%):
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '1.3rem',
+                                          fontWeight: 'bold',
+                                          color: '#f57f17',
+                                        }}
+                                      >
+                                        ₹
+                                        {(
+                                          interaction.product.pricePerUnit * 0.1
+                                        ).toFixed(2)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : interaction.payment?.verificationStatus ===
+                                  'verified' ? (
+                                  /* Payment Verified - Show success */
+                                  <div
+                                    style={{
+                                      background: 'white',
+                                      padding: '1.5rem',
+                                      borderRadius: '8px',
+                                      border: '2px solid #4caf50',
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        textAlign: 'center',
+                                        marginBottom: '1.5rem',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '3rem',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        ✅
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '1.2rem',
+                                          fontWeight: 'bold',
+                                          color: '#2e7d32',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        10% Advance Payment Verified & Approved!
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '0.85rem',
+                                          color: '#6d4c41',
+                                        }}
+                                      >
+                                        The buyer's 10% advance payment has been
+                                        verified by our team
+                                      </div>
+                                    </div>
+
+                                    {/* Payment Details */}
+                                    <div
+                                      style={{
+                                        background: '#e8f5e9',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        marginBottom: '1rem',
+                                        border: '1px solid #4caf50',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: '1fr 1fr',
+                                          gap: '1rem',
+                                          marginBottom: '1rem',
+                                        }}
+                                      >
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            10% Advance Amount Received
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '1.2rem',
+                                              fontWeight: 'bold',
+                                              color: '#2e7d32',
+                                            }}
+                                          >
+                                            ₹
+                                            {interaction.payment.advanceAmount?.toFixed(
+                                              2
+                                            ) ||
+                                              (
+                                                interaction.product
+                                                  .pricePerUnit * 0.1
+                                              ).toFixed(2)}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Verified On
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.9rem',
+                                              fontWeight: 'bold',
+                                              color: '#2e7d32',
+                                            }}
+                                          >
+                                            {interaction.payment.verifiedAt
+                                              ? new Date(
+                                                  interaction.payment.verifiedAt
+                                                ).toLocaleDateString()
+                                              : 'N/A'}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: '1fr 1fr',
+                                          gap: '1rem',
+                                        }}
+                                      >
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Submitted On
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.85rem',
+                                              color: '#666',
+                                            }}
+                                          >
+                                            {new Date(
+                                              interaction.payment.submittedAt ||
+                                                ''
+                                            ).toLocaleDateString()}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Transaction ID
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              fontFamily: 'monospace',
+                                              color: '#01579b',
+                                              background: '#e3f2fd',
+                                              padding: '0.25rem 0.5rem',
+                                              borderRadius: '4px',
+                                            }}
+                                          >
+                                            {interaction.payment.transactionId}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Payment Screenshot */}
+                                    <div
+                                      style={{
+                                        marginBottom: '1rem',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '0.9rem',
+                                          color: '#01579b',
+                                          marginBottom: '0.5rem',
+                                          fontWeight: 'bold',
+                                          textAlign: 'center',
+                                        }}
+                                      >
+                                        📷 Payment Screenshot:
+                                      </div>
+                                      <img
+                                        src={interaction.payment.screenshotUrl}
+                                        alt='Payment Screenshot'
+                                        style={{
+                                          width: '100%',
+                                          maxHeight: '350px',
+                                          objectFit: 'contain',
+                                          borderRadius: '8px',
+                                          border: '2px solid #4caf50',
+                                          background: '#f5f5f5',
+                                        }}
+                                      />
+                                    </div>
+
+                                    {/* Success Message */}
+                                    <div
+                                      style={{
+                                        background: '#c8e6c9',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        border: '1px solid #4caf50',
+                                        textAlign: 'center',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '0.9rem',
+                                          color: '#1b5e20',
+                                          fontWeight: 'bold',
+                                        }}
+                                      >
+                                        💰 10% Advance payment confirmed!
+                                        Proceed with order fulfillment.
+                                      </div>
+                                    </div>
+
+                                    {/* Download Contract PDF Section - Farmer */}
+                                    <div
+                                      style={{
+                                        marginTop: '1.5rem',
+                                        padding: '1.5rem',
+                                        background:
+                                          'linear-gradient(135deg, #fff9c4 0%, #fff59d 100%)',
+                                        border: '2px solid #f57f17',
+                                        borderRadius: '12px',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          textAlign: 'center',
+                                          marginBottom: '1rem',
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            fontSize: '2rem',
+                                            marginBottom: '0.5rem',
+                                          }}
+                                        >
+                                          📝
+                                        </div>
+                                        <h4
+                                          style={{
+                                            color: '#f57f17',
+                                            margin: '0 0 0.5rem 0',
+                                          }}
+                                        >
+                                          Official Contract Agreement
+                                        </h4>
+                                        <p
+                                          style={{
+                                            margin: 0,
+                                            fontSize: '0.85rem',
+                                            color: '#6d4c41',
+                                          }}
+                                        >
+                                          Your signed contract has been sent to
+                                          your email
+                                        </p>
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          background: 'white',
+                                          padding: '1rem',
+                                          borderRadius: '8px',
+                                          border: '1px solid #f57f17',
+                                          marginBottom: '1rem',
+                                        }}
+                                      >
+                                        <p
+                                          style={{
+                                            margin: '0 0 0.5rem 0',
+                                            fontSize: '0.85rem',
+                                            color: '#6d4c41',
+                                          }}
+                                        >
+                                          📧{' '}
+                                          <strong>Contract PDF sent to:</strong>
+                                        </p>
+                                        <p
+                                          style={{
+                                            margin: 0,
+                                            fontSize: '0.9rem',
+                                            color: '#2e7d32',
+                                            fontWeight: 'bold',
+                                          }}
+                                        >
+                                          {interaction.farmer.email}
+                                        </p>
+                                      </div>
+
+                                      <button
+                                        onClick={() =>
+                                          handleDownloadContract(interaction)
+                                        }
+                                        style={{
+                                          width: '100%',
+                                          background: '#f57f17',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '8px',
+                                          padding: '1rem',
+                                          cursor: 'pointer',
+                                          fontSize: '1rem',
+                                          fontWeight: 'bold',
+                                          transition: 'all 0.3s ease',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          gap: '0.5rem',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            '#e65100';
+                                          e.currentTarget.style.transform =
+                                            'translateY(-2px)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            '#f57f17';
+                                          e.currentTarget.style.transform =
+                                            'translateY(0)';
+                                        }}
+                                      >
+                                        📥 Download Contract PDF
+                                      </button>
+
+                                      <p
+                                        style={{
+                                          margin: '1rem 0 0 0',
+                                          fontSize: '0.75rem',
+                                          color: '#6d4c41',
+                                          textAlign: 'center',
+                                        }}
+                                      >
+                                        Contract includes branding, signatures,
+                                        company authorization & official seal
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : interaction.payment?.verificationStatus ===
+                                  'rejected' ? (
+                                  /* Payment Rejected - Show info to farmer */
+                                  <div
+                                    style={{
+                                      background: 'white',
+                                      padding: '1.5rem',
+                                      borderRadius: '8px',
+                                      border: '2px solid #f44336',
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        textAlign: 'center',
+                                        marginBottom: '1.5rem',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '2.5rem',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        ❌
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '1.1rem',
+                                          fontWeight: 'bold',
+                                          color: '#d32f2f',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        10% Advance Payment Rejected
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '0.85rem',
+                                          color: '#6d4c41',
+                                        }}
+                                      >
+                                        The buyer's 10% advance payment
+                                        submission was rejected
+                                      </div>
+                                    </div>
+
+                                    {/* Rejection Info */}
+                                    <div
+                                      style={{
+                                        background: '#ffebee',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        marginBottom: '1rem',
+                                        border: '1px solid #ef5350',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '0.85rem',
+                                          fontWeight: 'bold',
+                                          color: '#d32f2f',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        Rejection Reason:
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '0.9rem',
+                                          color: '#6d4c41',
+                                        }}
+                                      >
+                                        {interaction.payment.rejectionReason ||
+                                          'Not specified'}
+                                      </div>
+                                      {interaction.payment.rejectedAt && (
+                                        <div
+                                          style={{
+                                            marginTop: '0.5rem',
+                                            fontSize: '0.8rem',
+                                            color: '#999',
+                                          }}
+                                        >
+                                          Rejected on:{' '}
+                                          {new Date(
+                                            interaction.payment.rejectedAt
+                                          ).toLocaleDateString()}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Waiting Message */}
+                                    <div
+                                      style={{
+                                        background: '#fff3e0',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        border: '1px solid #ff9800',
+                                        textAlign: 'center',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '0.9rem',
+                                          color: '#e65100',
+                                        }}
+                                      >
+                                        ⏳ The buyer has been notified to retry
+                                        the payment with correct details.
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* Payment screenshot submitted - pending verification */
+                                  <div
+                                    style={{
+                                      background: 'white',
+                                      padding: '1.5rem',
+                                      borderRadius: '8px',
+                                      border: '2px solid #4caf50',
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        textAlign: 'center',
+                                        marginBottom: '1.5rem',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '2rem',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        📸
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '1.1rem',
+                                          fontWeight: 'bold',
+                                          color: '#2e7d32',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        10% Advance Payment Screenshot Received
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '0.85rem',
+                                          color: '#6d4c41',
+                                        }}
+                                      >
+                                        Buyer has submitted 10% advance payment
+                                        confirmation
+                                      </div>
+                                    </div>
+
+                                    {/* Payment Details */}
+                                    <div
+                                      style={{
+                                        background: '#e8f5e9',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        marginBottom: '1rem',
+                                        border: '1px solid #4caf50',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: '1fr 1fr',
+                                          gap: '1rem',
+                                        }}
+                                      >
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Advance Amount
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '1.1rem',
+                                              fontWeight: 'bold',
+                                              color: '#2e7d32',
+                                            }}
+                                          >
+                                            ₹
+                                            {interaction.payment.advanceAmount?.toFixed(
+                                              2
+                                            ) ||
+                                              (
+                                                interaction.product
+                                                  .pricePerUnit * 0.1
+                                              ).toFixed(2)}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              color: '#666',
+                                              marginBottom: '0.25rem',
+                                            }}
+                                          >
+                                            Submitted On
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: '0.9rem',
+                                              fontWeight: 'bold',
+                                              color: '#2e7d32',
+                                            }}
+                                          >
+                                            {new Date(
+                                              interaction.payment.submittedAt ||
+                                                ''
+                                            ).toLocaleDateString()}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Payment Screenshot Preview */}
+                                    <div
+                                      style={{
+                                        marginBottom: '1rem',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '0.9rem',
+                                          color: '#01579b',
+                                          marginBottom: '0.5rem',
+                                          fontWeight: 'bold',
+                                          textAlign: 'center',
+                                        }}
+                                      >
+                                        📷 Payment Screenshot Preview:
+                                      </div>
+                                      <img
+                                        src={interaction.payment.screenshotUrl}
+                                        alt='Payment Screenshot'
+                                        style={{
+                                          width: '100%',
+                                          maxHeight: '350px',
+                                          objectFit: 'contain',
+                                          borderRadius: '8px',
+                                          border: '2px solid #0277bd',
+                                          background: '#f5f5f5',
+                                        }}
+                                      />
+                                    </div>
+
+                                    {/* Verification Status */}
+                                    <div
+                                      style={{
+                                        background: '#fff3e0',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        border: '2px solid #ff9800',
+                                        textAlign: 'center',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: '1.5rem',
+                                          marginBottom: '0.5rem',
+                                        }}
+                                      >
+                                        ⏳
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '1rem',
+                                          fontWeight: 'bold',
+                                          color: '#e65100',
+                                          marginBottom: '0.25rem',
+                                        }}
+                                      >
+                                        Pending Verification
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '0.8rem',
+                                          color: '#6d4c41',
+                                        }}
+                                      >
+                                        Our team is verifying the payment. You
+                                        will be notified once approved.
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Timestamps */}
@@ -2701,6 +5073,365 @@ Note: This is a legally binding electronic document. By signing this agreement, 
                     ✍️ Sign Contract
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Payment Rejection Modal */}
+        {paymentRejectionModal.isOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              background: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 10000,
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() =>
+              setPaymentRejectionModal({ isOpen: false, interactionId: '' })
+            }
+          >
+            <div
+              style={{
+                background: 'white',
+                borderRadius: '16px',
+                padding: '2rem',
+                maxWidth: '500px',
+                width: '90%',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 style={{ color: '#d32f2f', margin: '0 0 1.5rem 0' }}>
+                🚫 Reject 10% Advance Payment
+              </h2>
+
+              <p style={{ color: '#666', marginBottom: '1rem' }}>
+                Please select a reason for rejecting this 10% advance payment:
+              </p>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                {paymentRejectionReasons.map((reason) => (
+                  <div
+                    key={reason}
+                    style={{
+                      marginBottom: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '0.75rem',
+                      border:
+                        paymentRejectionReason === reason
+                          ? '2px solid #d32f2f'
+                          : '1px solid #e0e0e0',
+                      borderRadius: '8px',
+                      background:
+                        paymentRejectionReason === reason ? '#ffebee' : 'white',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onClick={() => setPaymentRejectionReason(reason)}
+                  >
+                    <input
+                      type='radio'
+                      name='paymentRejectionReason'
+                      value={reason}
+                      checked={paymentRejectionReason === reason}
+                      onChange={(e) =>
+                        setPaymentRejectionReason(e.target.value)
+                      }
+                      style={{
+                        marginRight: '0.75rem',
+                        accentColor: '#d32f2f',
+                      }}
+                    />
+                    <label
+                      style={{
+                        cursor: 'pointer',
+                        fontSize: '0.95rem',
+                        color:
+                          paymentRejectionReason === reason
+                            ? '#d32f2f'
+                            : '#333',
+                      }}
+                    >
+                      {reason}
+                    </label>
+                  </div>
+                ))}
+              </div>
+
+              {paymentRejectionReason === 'Other' && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '0.5rem',
+                      fontWeight: 'bold',
+                      color: '#333',
+                    }}
+                  >
+                    Please specify the reason:
+                  </label>
+                  <textarea
+                    value={paymentCustomReason}
+                    onChange={(e) => setPaymentCustomReason(e.target.value)}
+                    placeholder='Enter your custom rejection reason...'
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: '1px solid #e0e0e0',
+                      borderRadius: '8px',
+                      fontSize: '0.95rem',
+                      minHeight: '100px',
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '1rem',
+                  justifyContent: 'flex-end',
+                }}
+              >
+                <button
+                  onClick={() =>
+                    setPaymentRejectionModal({
+                      isOpen: false,
+                      interactionId: '',
+                    })
+                  }
+                  style={{
+                    background: '#f5f5f5',
+                    color: '#757575',
+                    border: '2px solid #e0e0e0',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmPaymentRejection}
+                  disabled={
+                    !paymentRejectionReason ||
+                    (paymentRejectionReason === 'Other' && !paymentCustomReason)
+                  }
+                  style={{
+                    background:
+                      paymentRejectionReason &&
+                      (paymentRejectionReason !== 'Other' ||
+                        paymentCustomReason)
+                        ? '#d32f2f'
+                        : '#ccc',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor:
+                      paymentRejectionReason &&
+                      (paymentRejectionReason !== 'Other' ||
+                        paymentCustomReason)
+                        ? 'pointer'
+                        : 'not-allowed',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Confirm Rejection
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Acceptance Confirmation Modal */}
+        {acceptanceConfirmModal.isOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              background: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10000,
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() =>
+              setAcceptanceConfirmModal({
+                isOpen: false,
+                interactionId: '',
+                action: 'accept',
+                userType: 'farmer',
+              })
+            }
+          >
+            <div
+              style={{
+                background: 'white',
+                borderRadius: '16px',
+                padding: '2rem',
+                maxWidth: '500px',
+                width: '90%',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>
+                  {acceptanceConfirmModal.action === 'accept' ? '✅' : '❌'}
+                </div>
+                <h2
+                  style={{
+                    color:
+                      acceptanceConfirmModal.action === 'accept'
+                        ? '#4caf50'
+                        : '#d32f2f',
+                    margin: '0 0 0.5rem 0',
+                  }}
+                >
+                  {acceptanceConfirmModal.action === 'accept'
+                    ? 'Accept'
+                    : 'Reject'}{' '}
+                  Interaction
+                </h2>
+                <p style={{ color: '#666', margin: 0 }}>
+                  Are you sure you want to {acceptanceConfirmModal.action} this
+                  interaction as a {acceptanceConfirmModal.userType}?
+                  {acceptanceConfirmModal.action === 'accept' && (
+                    <span
+                      style={{
+                        display: 'block',
+                        marginTop: '0.5rem',
+                        fontWeight: 'bold',
+                        color: '#388e3c',
+                      }}
+                    >
+                      This action will notify the other party.
+                    </span>
+                  )}
+                  {acceptanceConfirmModal.action === 'reject' && (
+                    <span
+                      style={{
+                        display: 'block',
+                        marginTop: '0.5rem',
+                        fontWeight: 'bold',
+                        color: '#d32f2f',
+                      }}
+                    >
+                      This action cannot be undone.
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '1rem',
+                  justifyContent: 'center',
+                }}
+              >
+                <button
+                  onClick={() =>
+                    setAcceptanceConfirmModal({
+                      isOpen: false,
+                      interactionId: '',
+                      action: 'accept',
+                      userType: 'farmer',
+                    })
+                  }
+                  style={{
+                    background: '#f5f5f5',
+                    color: '#757575',
+                    border: '2px solid #e0e0e0',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#e0e0e0';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#f5f5f5';
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={
+                    acceptanceConfirmModal.userType === 'farmer'
+                      ? confirmFarmerAction
+                      : confirmBuyerAction
+                  }
+                  style={{
+                    background:
+                      acceptanceConfirmModal.action === 'accept'
+                        ? acceptanceConfirmModal.userType === 'farmer'
+                          ? '#4caf50'
+                          : '#2196f3'
+                        : acceptanceConfirmModal.userType === 'farmer'
+                        ? '#f44336'
+                        : '#ff5722',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1.5rem',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (acceptanceConfirmModal.action === 'accept') {
+                      e.currentTarget.style.background =
+                        acceptanceConfirmModal.userType === 'farmer'
+                          ? '#388e3c'
+                          : '#1565c0';
+                    } else {
+                      e.currentTarget.style.background =
+                        acceptanceConfirmModal.userType === 'farmer'
+                          ? '#c62828'
+                          : '#d84315';
+                    }
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background =
+                      acceptanceConfirmModal.action === 'accept'
+                        ? acceptanceConfirmModal.userType === 'farmer'
+                          ? '#4caf50'
+                          : '#2196f3'
+                        : acceptanceConfirmModal.userType === 'farmer'
+                        ? '#f44336'
+                        : '#ff5722';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
+                >
+                  {acceptanceConfirmModal.action === 'accept'
+                    ? '✅ Confirm Accept'
+                    : '❌ Confirm Reject'}
+                </button>
               </div>
             </div>
           </div>

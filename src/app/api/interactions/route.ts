@@ -1,8 +1,7 @@
 import clientPromise from '@/app/db/mongodb';
 import { NextRequest, NextResponse } from 'next/server';
 import { decryptEmail } from '@/app/lib/encryption';
-import { sendInteractionAcceptanceEmail, sendContractSignedEmail } from '@/app/lib/emailService';
-import { generateContractPDF } from '@/app/lib/contractPdfGenerator';
+import { sendInteractionAcceptanceEmail } from '@/app/lib/emailService';
 
 // Helper to safely decrypt email
 const safeDecryptEmail = (email: string): string => {
@@ -157,6 +156,43 @@ export async function GET(req: NextRequest) {
     const userType = searchParams.get('userType'); // 'farmer' or 'buyer'
     const interactionType = searchParams.get('interactionType'); // optional filter
     const status = searchParams.get('status'); // optional filter
+    const paymentStatus = searchParams.get('paymentStatus'); // optional filter for payment verification
+    const adminView = searchParams.get('adminView'); // 'true' for admin payment verification view
+    
+    // If adminView is true, fetch all interactions with pending payments
+    if (adminView === 'true' && paymentStatus === 'pending') {
+      const interactions = await db.collection('interactions')
+        .find({ 
+          'payment.verificationStatus': 'pending',
+          status: 'payment'
+        })
+        .sort({ 'payment.submittedAt': -1 })
+        .toArray();
+      
+      // Fetch buyer and farmer details for each interaction
+      const enrichedInteractions = await Promise.all(
+        interactions.map(async (interaction) => {
+          const buyerDetails = await db.collection('users').findOne({ 
+            $or: [{ buyerId: interaction.buyerid }, { _id: interaction.buyerid }]
+          });
+          const farmerDetails = await db.collection('farmers').findOne({ 
+            farmerId: interaction.farmerid 
+          });
+          
+          return {
+            ...interaction,
+            buyer: buyerDetails,
+            farmer: farmerDetails
+          };
+        })
+      );
+      
+      return NextResponse.json({
+        success: true,
+        data: enrichedInteractions,
+        count: enrichedInteractions.length
+      });
+    }
     
     if (!userId || !userType) {
       return NextResponse.json({
@@ -221,13 +257,18 @@ export async function PUT(req: NextRequest) {
     const { 
       interactionId, 
       status, 
-      farmerResponse, 
+      farmerResponse,
+      buyerResponse, 
       farmerAccepted, 
       buyerAccepted,
       generateContract,
       signContract,
       signatureType,
-      signatureName
+      signatureName,
+      paymentScreenshot,
+      approvePayment,
+      rejectPayment,
+      rejectionReason
     } = await req.json();
     
     if (!interactionId) {
@@ -248,6 +289,10 @@ export async function PUT(req: NextRequest) {
     
     if (farmerResponse !== undefined) {
       updateData.farmerResponse = farmerResponse;
+    }
+    
+    if (buyerResponse !== undefined) {
+      updateData.buyerResponse = buyerResponse;
     }
     
     // Handle acceptance fields
@@ -302,6 +347,34 @@ export async function PUT(req: NextRequest) {
       };
     }
 
+    // Handle payment screenshot submission
+    if (paymentScreenshot) {
+      const { ObjectId: PaymentObjId } = require('mongodb');
+      const interaction = await db.collection('interactions').findOne({
+        _id: new PaymentObjId(interactionId)
+      });
+
+      if (!interaction) {
+        return NextResponse.json({
+          success: false,
+          message: 'Interaction not found'
+        }, { status: 404 });
+      }
+
+      // Calculate payment amounts
+      const totalAmount = interaction.product?.pricePerUnit || 0;
+      const advanceAmount = totalAmount * 0.1;
+
+      updateData.payment = {
+        transactionId: `TXN${interactionId.substring(interactionId.length - 12).toUpperCase()}`,
+        totalAmount: totalAmount,
+        advanceAmount: advanceAmount,
+        screenshotUrl: paymentScreenshot,
+        submittedAt: new Date().toISOString(),
+        verificationStatus: 'pending'
+      };
+    }
+
     // Handle contract signing
     if (signContract && signatureName) {
       const { ObjectId } = require('mongodb');
@@ -339,42 +412,7 @@ export async function PUT(req: NextRequest) {
 
       if (bothSigned) {
         updateData.status = 'payment';
-
-        // Generate PDF and send contract signed email notification
-        try {
-          console.log('Both parties signed - generating PDF and sending emails...');
-          
-          // Create updated interaction object with complete contract data
-          const interactionWithSignatures = {
-            ...interaction,
-            contract: contract
-          };
-
-          // Generate contract PDF
-          console.log('Generating contract PDF...');
-          const contractPdf = await generateContractPDF(interactionWithSignatures as any);
-          console.log('PDF generated successfully, size:', contractPdf.length, 'bytes');
-          
-          // Send email with PDF attachment
-          console.log('Sending emails to:', {
-            farmer: interaction.farmer?.email,
-            buyer: interaction.buyer?.email
-          });
-          
-          await sendContractSignedEmail(
-            interaction.farmer?.email || '',
-            interaction.buyer?.email || '',
-            interaction.farmer?.contactPerson || 'Farmer',
-            interaction.buyer?.fullName || 'Buyer',
-            interaction.product?.productName || 'Product',
-            contractPdf
-          );
-          console.log('✅ Sent contract signed notification emails with PDF attachment to both parties');
-        } catch (emailError) {
-          // Log but don't fail the transaction
-          console.error('❌ Failed to send contract signed emails:', emailError);
-          console.error('Email error details:', emailError instanceof Error ? emailError.message : 'Unknown error');
-        }
+        console.log('Both parties signed - contract complete. Status updated to payment.');
       }
 
       const { ObjectId: ObjId } = require('mongodb');
@@ -397,6 +435,80 @@ export async function PUT(req: NextRequest) {
           message: 'Failed to update contract signature'
         }, { status: 500 });
       }
+    }
+
+    // Handle payment approval (admin only)
+    if (approvePayment) {
+      const { ObjectId: ApproveObjId } = require('mongodb');
+      const interaction = await db.collection('interactions').findOne({
+        _id: new ApproveObjId(interactionId)
+      });
+
+      if (!interaction || !interaction.payment) {
+        return NextResponse.json({
+          success: false,
+          message: 'Payment not found'
+        }, { status: 404 });
+      }
+
+      updateData.payment = {
+        ...interaction.payment,
+        verificationStatus: 'verified',
+        verifiedAt: new Date().toISOString()
+      };
+
+      // Update status to awaiting-delivery when payment is verified
+      updateData.status = 'awaiting-delivery';
+
+      // Generate and send contract PDF to both parties
+      try {
+        const { generateContractPDF } = await import('@/app/lib/contractPdfGenerator');
+        const { sendContractPdfEmail } = await import('@/app/lib/emailService');
+        
+        const contractPdfBuffer = await generateContractPDF(interaction);
+        
+        await sendContractPdfEmail(
+          interaction.farmer?.email || '',
+          interaction.buyer?.email || '',
+          interaction.farmer?.contactPerson || 'Farmer',
+          interaction.buyer?.fullName || 'Buyer',
+          interaction.product?.productName || 'Product',
+          contractPdfBuffer
+        );
+        
+        console.log('Contract PDF generated and emailed to both parties');
+      } catch (emailError) {
+        // Log but don't fail the payment approval
+        console.error('Failed to send contract PDF emails:', emailError);
+      }
+
+      console.log('Payment approved for interaction:', interactionId, '- Status updated to awaiting-delivery');
+    }
+
+    // Handle payment rejection (admin only)
+    if (rejectPayment && rejectionReason) {
+      const { ObjectId: RejectObjId } = require('mongodb');
+      const interaction = await db.collection('interactions').findOne({
+        _id: new RejectObjId(interactionId)
+      });
+
+      if (!interaction || !interaction.payment) {
+        return NextResponse.json({
+          success: false,
+          message: 'Payment not found'
+        }, { status: 404 });
+      }
+
+      updateData.payment = {
+        ...interaction.payment,
+        verificationStatus: 'rejected',
+        rejectedAt: new Date().toISOString(),
+        rejectionReason: rejectionReason,
+        screenshotUrl: null // Clear screenshot to allow retry
+      };
+
+      // TODO: Send rejection email to both buyer and farmer
+      console.log('Payment rejected for interaction:', interactionId, 'Reason:', rejectionReason);
     }
     
     const { ObjectId } = require('mongodb');

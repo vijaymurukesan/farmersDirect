@@ -74,7 +74,7 @@ interface PendingProduct {
 export default function AdminPage() {
   const router = useRouter();
   const [activeMainTab, setActiveMainTab] = useState<
-    'users' | 'pending' | 'products'
+    'users' | 'pending' | 'products' | 'payments'
   >('users');
   const [activeUserTab, setActiveUserTab] = useState<
     'farmers' | 'buyers' | 'admins' | 'owner'
@@ -84,6 +84,7 @@ export default function AdminPage() {
     []
   );
   const [pendingProducts, setPendingProducts] = useState<PendingProduct[]>([]);
+  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<PendingProduct | null>(
@@ -565,6 +566,21 @@ export default function AdminPage() {
             : [];
           setPendingProducts(pendingProductsList);
         }
+
+        // Fetch pending payments
+        const paymentsResponse = await fetch(
+          '/api/interactions?adminView=true&paymentStatus=pending',
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (paymentsResponse.ok) {
+          const paymentsData = await paymentsResponse.json();
+          setPendingPayments(paymentsData.data || []);
+        }
       } catch (error) {
         console.error('Error fetching users:', error);
         showSnackbar('Error loading users', 'error');
@@ -971,6 +987,14 @@ export default function AdminPage() {
               onClick={() => setActiveMainTab('products')}
             >
               📦 Product Management
+            </button>
+            <button
+              className={`main-tab ${
+                activeMainTab === 'payments' ? 'active' : ''
+              }`}
+              onClick={() => setActiveMainTab('payments')}
+            >
+              💳 Payment Verification ({pendingPayments.length})
             </button>
           </div>
 
@@ -4095,6 +4119,290 @@ export default function AdminPage() {
                         )}
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Payment Verification Tab */}
+          {activeMainTab === 'payments' && (
+            <div>
+              <div
+                style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '2rem',
+                  marginBottom: '2rem',
+                }}
+              >
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h2 style={{ color: '#388e3c', margin: '0 0 0.5rem 0' }}>
+                    💳 Payment Verification - Pending Approvals
+                  </h2>
+                  <p style={{ color: '#6d4c41', margin: 0 }}>
+                    Review and verify payment screenshots submitted by buyers
+                  </p>
+                </div>
+
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: '3rem' }}>
+                    <div
+                      style={{
+                        width: '50px',
+                        height: '50px',
+                        border: '4px solid #c8e6c9',
+                        borderTop: '4px solid #388e3c',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                        margin: '0 auto 1rem',
+                      }}
+                    ></div>
+                    <p style={{ color: '#388e3c' }}>Loading payments...</p>
+                  </div>
+                ) : pendingPayments.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '3rem',
+                      color: '#757575',
+                    }}
+                  >
+                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>
+                      ✅
+                    </div>
+                    <h3 style={{ color: '#388e3c', margin: '0 0 0.5rem 0' }}>
+                      No pending payments
+                    </h3>
+                    <p style={{ margin: 0 }}>
+                      All payments have been verified!
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table
+                      style={{
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        border: '1px solid #e0e0e0',
+                      }}
+                    >
+                      <thead>
+                        <tr style={{ background: '#e8f5e9' }}>
+                          <th
+                            style={{
+                              padding: '1rem',
+                              textAlign: 'left',
+                              borderBottom: '2px solid #c8e6c9',
+                              color: '#388e3c',
+                            }}
+                          >
+                            Buyer Name
+                          </th>
+                          <th
+                            style={{
+                              padding: '1rem',
+                              textAlign: 'left',
+                              borderBottom: '2px solid #c8e6c9',
+                              color: '#388e3c',
+                            }}
+                          >
+                            Company
+                          </th>
+                          <th
+                            style={{
+                              padding: '1rem',
+                              textAlign: 'left',
+                              borderBottom: '2px solid #c8e6c9',
+                              color: '#388e3c',
+                            }}
+                          >
+                            Transaction ID
+                          </th>
+                          <th
+                            style={{
+                              padding: '1rem',
+                              textAlign: 'right',
+                              borderBottom: '2px solid #c8e6c9',
+                              color: '#388e3c',
+                            }}
+                          >
+                            Amount
+                          </th>
+                          <th
+                            style={{
+                              padding: '1rem',
+                              textAlign: 'left',
+                              borderBottom: '2px solid #c8e6c9',
+                              color: '#388e3c',
+                            }}
+                          >
+                            Payment Type
+                          </th>
+                          <th
+                            style={{
+                              padding: '1rem',
+                              textAlign: 'left',
+                              borderBottom: '2px solid #c8e6c9',
+                              color: '#388e3c',
+                            }}
+                          >
+                            Farmer
+                          </th>
+                          <th
+                            style={{
+                              padding: '1rem',
+                              textAlign: 'left',
+                              borderBottom: '2px solid #c8e6c9',
+                              color: '#388e3c',
+                            }}
+                          >
+                            Submitted
+                          </th>
+                          <th
+                            style={{
+                              padding: '1rem',
+                              textAlign: 'center',
+                              borderBottom: '2px solid #c8e6c9',
+                              color: '#388e3c',
+                            }}
+                          >
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingPayments.map((payment) => (
+                          <tr
+                            key={payment._id}
+                            style={{
+                              borderBottom: '1px solid #e0e0e0',
+                              transition: 'background 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = '#f1f8e9';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'white';
+                            }}
+                          >
+                            <td style={{ padding: '1rem' }}>
+                              <div
+                                style={{ fontWeight: 'bold', color: '#2e7d32' }}
+                              >
+                                {payment.buyer?.fullName || 'N/A'}
+                              </div>
+                              <div
+                                style={{ fontSize: '0.85rem', color: '#666' }}
+                              >
+                                {payment.buyerid}
+                              </div>
+                            </td>
+                            <td style={{ padding: '1rem', color: '#6d4c41' }}>
+                              {payment.buyer?.companyName || 'N/A'}
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              <code
+                                style={{
+                                  background: '#e3f2fd',
+                                  padding: '0.25rem 0.5rem',
+                                  borderRadius: '4px',
+                                  fontSize: '0.85rem',
+                                  fontFamily: 'monospace',
+                                  color: '#01579b',
+                                }}
+                              >
+                                {payment.payment?.transactionId || 'N/A'}
+                              </code>
+                            </td>
+                            <td style={{ padding: '1rem', textAlign: 'right' }}>
+                              <div
+                                style={{
+                                  fontWeight: 'bold',
+                                  color: '#f57f17',
+                                  fontSize: '1.1rem',
+                                }}
+                              >
+                                ₹
+                                {payment.payment?.advanceAmount?.toFixed(2) ||
+                                  '0.00'}
+                              </div>
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              <span
+                                style={{
+                                  background: '#fff9c4',
+                                  padding: '0.25rem 0.75rem',
+                                  borderRadius: '12px',
+                                  fontSize: '0.85rem',
+                                  fontWeight: 'bold',
+                                  color: '#f57f17',
+                                }}
+                              >
+                                Advance (10%)
+                              </span>
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              <div
+                                style={{ fontWeight: 'bold', color: '#2e7d32' }}
+                              >
+                                {payment.farmer?.contactPerson || 'N/A'}
+                              </div>
+                              <div
+                                style={{ fontSize: '0.85rem', color: '#666' }}
+                              >
+                                {payment.farmerid}
+                              </div>
+                            </td>
+                            <td
+                              style={{
+                                padding: '1rem',
+                                fontSize: '0.85rem',
+                                color: '#666',
+                              }}
+                            >
+                              {payment.payment?.submittedAt
+                                ? new Date(
+                                    payment.payment.submittedAt
+                                  ).toLocaleString()
+                                : 'N/A'}
+                            </td>
+                            <td
+                              style={{ padding: '1rem', textAlign: 'center' }}
+                            >
+                              <button
+                                onClick={() =>
+                                  router.push(`/account/${payment.buyerid}`)
+                                }
+                                style={{
+                                  background: '#0277bd',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  padding: '0.5rem 1rem',
+                                  cursor: 'pointer',
+                                  fontSize: '0.9rem',
+                                  fontWeight: 'bold',
+                                  transition: 'all 0.2s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = '#01579b';
+                                  e.currentTarget.style.transform =
+                                    'translateY(-1px)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = '#0277bd';
+                                  e.currentTarget.style.transform =
+                                    'translateY(0)';
+                                }}
+                              >
+                                👁️ View Details
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
