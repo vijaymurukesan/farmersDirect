@@ -39,7 +39,10 @@ interface Farmer {
   size: string;
   totalSuccessForDelivery: string;
   totalContractWithdrawal: string;
-  relatedProduct?: { productId: string }[];
+  relatedProduct?: {
+    productId: string;
+    PricePerUnit?: number;
+  }[];
 }
 
 interface Filters {
@@ -156,6 +159,11 @@ export default function ProductDetailsPage() {
     buyerId?: string;
     email?: string;
     fullName?: string;
+    contactPerson?: string;
+    companyName?: string;
+    phoneNumber?: string;
+    emailVerified?: boolean;
+    userVerified?: boolean;
   } | null>(null);
   const [accessDeniedModal, setAccessDeniedModal] = useState(false);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState('');
@@ -2089,7 +2097,8 @@ export default function ProductDetailsPage() {
                               e,
                               `https://www.google.com/maps?q=${
                                 farmer.mapLocation?.lat || 0
-                              },${farmer.mapLocation?.lng || 0}`
+                              },${farmer.mapLocation?.lng || 0}`,
+                              farmer
                             )
                           }
                           target='_blank'
@@ -2113,7 +2122,8 @@ export default function ProductDetailsPage() {
                             onClick={(e) =>
                               handleProtectedLink(
                                 e,
-                                farmer.organicCertificate || ''
+                                farmer.organicCertificate || '',
+                                farmer
                               )
                             }
                             target='_blank'

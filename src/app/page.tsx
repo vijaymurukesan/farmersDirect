@@ -291,50 +291,56 @@ const Dashboard = () => {
         />
         <SearchResults results={results} />
 
-        {/* Add Product Section - Only visible to logged-in users */}
-        {isLoggedIn && (
-          <div
+        {/* Add Product Section - Visible to everyone */}
+        <div
+          style={{
+            marginTop: '3rem',
+            padding: '2rem',
+            background: '#e8f5e9',
+            border: '2px solid #4caf50',
+            borderRadius: '12px',
+            textAlign: 'center',
+          }}
+        >
+          <h3 style={{ color: '#2e7d32', marginBottom: '1rem' }}>
+            🌱 Don't see your product?
+          </h3>
+          <p style={{ color: '#6d4c41', marginBottom: '1.5rem' }}>
+            {isLoggedIn
+              ? 'Help us expand our catalog by adding a new product'
+              : 'Login to add a new product to our catalog'}
+          </p>
+          <button
+            onClick={() => {
+              if (isLoggedIn) {
+                router.push('/add-a-product');
+              } else {
+                router.push('/login');
+              }
+            }}
             style={{
-              marginTop: '3rem',
-              padding: '2rem',
-              background: '#e8f5e9',
-              border: '2px solid #4caf50',
-              borderRadius: '12px',
-              textAlign: 'center',
+              background: '#388e3c',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '0.75rem 2rem',
+              fontSize: '1rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = '#2e7d32';
+              e.currentTarget.style.transform = 'translateY(-2px)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = '#388e3c';
+              e.currentTarget.style.transform = 'translateY(0)';
             }}
           >
-            <h3 style={{ color: '#2e7d32', marginBottom: '1rem' }}>
-              🌱 Don't see your product?
-            </h3>
-            <p style={{ color: '#6d4c41', marginBottom: '1.5rem' }}>
-              Help us expand our catalog by adding a new product
-            </p>
-            <button
-              onClick={() => router.push('/add-a-product')}
-              style={{
-                background: '#388e3c',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '0.75rem 2rem',
-                fontSize: '1rem',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                transition: 'all 0.3s ease',
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.background = '#2e7d32';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.background = '#388e3c';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-            >
-              ➕ Add a Product
-            </button>
-          </div>
-        )}
+            {isLoggedIn ? '➕ Add a Product' : '🔐 Login to Add Product'}
+          </button>
+        </div>
       </main>
       <Footer />
     </div>
