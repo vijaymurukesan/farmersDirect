@@ -1,11 +1,11 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Snackbar from '../components/Snackbar';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 
-export default function VerificationPage() {
+function VerificationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [userData, setUserData] = useState<any>(null);
@@ -4780,5 +4780,42 @@ export default function VerificationPage() {
         duration={5000}
       />
     </div>
+  );
+}
+
+export default function VerificationPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#f1f8e9',
+          }}
+        >
+          <div style={{ textAlign: 'center' }}>
+            <div
+              style={{
+                width: '50px',
+                height: '50px',
+                border: '4px solid #c8e6c9',
+                borderTop: '4px solid #388e3c',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 1rem',
+              }}
+            ></div>
+            <p style={{ color: '#388e3c', fontSize: '1.1rem' }}>
+              Loading verification page...
+            </p>
+          </div>
+        </div>
+      }
+    >
+      <VerificationContent />
+    </Suspense>
   );
 }
