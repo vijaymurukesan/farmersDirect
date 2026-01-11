@@ -1491,42 +1491,85 @@ export default function ProductDetailsPage() {
                 />
               )}
 
-              {/* ADD Farmer Button - hide if user already registered */}
-              {!hasUserAlreadyRegistered() && (
-                <button
-                  style={{
-                    background: 'linear-gradient(45deg, #388e3c, #2e7d32)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '1rem 2rem',
-                    cursor: 'pointer',
-                    fontSize: '1.1rem',
-                    fontWeight: 'bold',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    boxShadow: '0 4px 12px rgba(56, 142, 60, 0.3)',
-                    transition: 'all 0.3s ease',
-                    marginTop: '1.5rem',
-                    minWidth: '200px',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow =
-                      '0 6px 16px rgba(56, 142, 60, 0.4)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow =
-                      '0 4px 12px rgba(56, 142, 60, 0.3)';
-                  }}
-                  onClick={handleAddFarmerClick}
-                >
-                  👨‍🌾 ADD Farmer
-                </button>
-              )}
+              {/* ADD Farmer Button - Show for farmer, admin, owner (not for buyer) */}
+              {isLoggedIn &&
+                userData &&
+                userData.userType !== 'buyer' &&
+                (() => {
+                  const alreadyRegistered = hasUserAlreadyRegistered();
+                  return (
+                    <div style={{ marginTop: '1.5rem' }}>
+                      {alreadyRegistered && (
+                        <div
+                          style={{
+                            background: '#fff3cd',
+                            border: '2px solid #ffc107',
+                            borderRadius: '8px',
+                            padding: '0.75rem 1rem',
+                            marginBottom: '1rem',
+                            color: '#856404',
+                            fontSize: '0.95rem',
+                            fontWeight: 'bold',
+                            textAlign: 'center',
+                          }}
+                        >
+                          ℹ️ You are already associated with this product
+                        </div>
+                      )}
+                      <button
+                        disabled={alreadyRegistered}
+                        style={{
+                          background: alreadyRegistered
+                            ? '#cccccc'
+                            : 'linear-gradient(45deg, #388e3c, #2e7d32)',
+                          color: alreadyRegistered ? '#666666' : 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '1rem 2rem',
+                          cursor: alreadyRegistered ? 'not-allowed' : 'pointer',
+                          fontSize: '1.1rem',
+                          fontWeight: 'bold',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.5rem',
+                          boxShadow: alreadyRegistered
+                            ? 'none'
+                            : '0 4px 12px rgba(56, 142, 60, 0.3)',
+                          transition: 'all 0.3s ease',
+                          minWidth: '200px',
+                          opacity: alreadyRegistered ? 0.6 : 1,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!alreadyRegistered) {
+                            e.currentTarget.style.transform =
+                              'translateY(-2px)';
+                            e.currentTarget.style.boxShadow =
+                              '0 6px 16px rgba(56, 142, 60, 0.4)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!alreadyRegistered) {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow =
+                              '0 4px 12px rgba(56, 142, 60, 0.3)';
+                          }
+                        }}
+                        onClick={handleAddFarmerClick}
+                        title={
+                          alreadyRegistered
+                            ? 'You have already registered for this product'
+                            : 'Click to add yourself as a farmer for this product'
+                        }
+                      >
+                        👨‍🌾{' '}
+                        {alreadyRegistered
+                          ? 'Already Registered'
+                          : 'ADD Farmer'}
+                      </button>
+                    </div>
+                  );
+                })()}
             </div>
 
             {/* Column 2 - Product Images Carousel */}
@@ -1788,8 +1831,94 @@ export default function ProductDetailsPage() {
                     padding: '1.5rem',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                     transition: 'all 0.3s ease',
+                    position: 'relative',
                   }}
                 >
+                  {/* Edit & Delete Icons - Top Right Corner */}
+                  {canEditFarmer(farmer) && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '1rem',
+                        right: '1rem',
+                        display: 'flex',
+                        gap: '0.5rem',
+                        zIndex: 10,
+                      }}
+                    >
+                      <button
+                        onClick={() => handleEditFarmer(farmer)}
+                        title='Edit Farmer'
+                        style={{
+                          background: '#f5f5f5',
+                          color: '#ff9800',
+                          border: '1px solid #e0e0e0',
+                          borderRadius: '50%',
+                          width: '36px',
+                          height: '36px',
+                          cursor: 'pointer',
+                          fontSize: '1rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)',
+                          transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.1)';
+                          e.currentTarget.style.background = '#ff9800';
+                          e.currentTarget.style.color = 'white';
+                          e.currentTarget.style.boxShadow =
+                            '0 3px 10px rgba(255, 152, 0, 0.3)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.background = '#f5f5f5';
+                          e.currentTarget.style.color = '#ff9800';
+                          e.currentTarget.style.boxShadow =
+                            '0 2px 6px rgba(0, 0, 0, 0.1)';
+                        }}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => handleDeleteFarmer(farmer)}
+                        title='Delete Farmer'
+                        style={{
+                          background: '#f5f5f5',
+                          color: '#f44336',
+                          border: '1px solid #e0e0e0',
+                          borderRadius: '50%',
+                          width: '36px',
+                          height: '36px',
+                          cursor: 'pointer',
+                          fontSize: '1rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)',
+                          transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.1)';
+                          e.currentTarget.style.background = '#f44336';
+                          e.currentTarget.style.color = 'white';
+                          e.currentTarget.style.boxShadow =
+                            '0 3px 10px rgba(244, 67, 54, 0.3)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.background = '#f5f5f5';
+                          e.currentTarget.style.color = '#f44336';
+                          e.currentTarget.style.boxShadow =
+                            '0 2px 6px rgba(0, 0, 0, 0.1)';
+                        }}
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  )}
+
                   {/* Header Section - Single Row Layout */}
                   <div
                     className='farmer-header-grid'
@@ -1805,13 +1934,9 @@ export default function ProductDetailsPage() {
                         const canEdit = canEditFarmer(farmer);
 
                         // Base columns: farmer info, price, contact, location, video, photos
-                        // + Edit & Delete if canEdit (2 columns)
                         // + Shortlist, Express Interest, Request Sample if buyer/admin/owner (3 columns)
-                        if (canEdit && isBuyerAdminOwner) {
-                          return 'auto 1fr auto auto auto auto auto auto auto auto auto';
-                        } else if (canEdit) {
-                          return 'auto 1fr auto auto auto auto auto auto';
-                        } else if (isBuyerAdminOwner) {
+                        // Edit & Delete are now in top-right corner, not in grid
+                        if (isBuyerAdminOwner) {
                           return 'auto 1fr auto auto auto auto auto auto auto';
                         } else {
                           return 'auto 1fr auto auto auto auto';
@@ -2225,84 +2350,6 @@ export default function ProductDetailsPage() {
                         📸 Photos
                       </button>
                     </div>
-
-                    {/* 7. Edit Button - Only for admin, owner, or the farmer who created this */}
-                    {canEditFarmer(farmer) && (
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <button
-                          onClick={() => handleEditFarmer(farmer)}
-                          style={{
-                            background: '#ff9800',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            padding: '0.75rem 1rem',
-                            cursor: 'pointer',
-                            fontSize: '0.9rem',
-                            fontWeight: '600',
-                            boxShadow: '0 2px 8px rgba(255, 152, 0, 0.3)',
-                            transition: 'all 0.2s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform =
-                              'translateY(-2px)';
-                            e.currentTarget.style.boxShadow =
-                              '0 4px 12px rgba(255, 152, 0, 0.4)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow =
-                              '0 2px 8px rgba(255, 152, 0, 0.3)';
-                          }}
-                        >
-                          ✏️ EDIT
-                        </button>
-                      </div>
-                    )}
-
-                    {/* 8. Delete Button - Only for admin, owner, or the farmer who created this */}
-                    {canEditFarmer(farmer) && (
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <button
-                          onClick={() => handleDeleteFarmer(farmer)}
-                          style={{
-                            background: '#f44336',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            padding: '0.75rem 1rem',
-                            cursor: 'pointer',
-                            fontSize: '0.9rem',
-                            fontWeight: '600',
-                            boxShadow: '0 2px 8px rgba(244, 67, 54, 0.3)',
-                            transition: 'all 0.2s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform =
-                              'translateY(-2px)';
-                            e.currentTarget.style.boxShadow =
-                              '0 4px 12px rgba(244, 67, 54, 0.4)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow =
-                              '0 2px 8px rgba(244, 67, 54, 0.3)';
-                          }}
-                        >
-                          🗑️ DELETE
-                        </button>
-                      </div>
-                    )}
 
                     {/* 9. Shortlist Button - Only for buyer, admin, owner */}
                     {isLoggedIn &&
